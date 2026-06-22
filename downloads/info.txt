@@ -1,0 +1,6 @@
+﻿Here, the downloaded media will be stored, named after it's shortcut.
+(...stored not for so long, as in my code, I implemented deletion right after bot posts media)
+
+the purpose of this txt is to force the download folder to persist, btw
+
+~made with a lot of love by dani4feed
