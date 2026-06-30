@@ -55,7 +55,7 @@ def load_reel(url, shortcode):
     ydl_opts = {
         'paths': {'home': dir_target},
         'outtmpl': '%(id)s.%(ext)s',
-        'quiet': False
+        'quiet': True
     }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -73,14 +73,12 @@ def load_reel(url, shortcode):
 
 
 def load_post(shortcode, img_index):
-    #print('image_index: ')
-    #print(img_index)
     post = Post.from_shortcode(Loader.context, shortcode)
     dir_target = os.path.join('downloads', shortcode)
-    #print(dir_target)
     full_path = os.path.abspath(dir_target)
-    success = Loader.download_post(post, target=shortcode)
-    if success:
+
+    try:
+        Loader.download_post(post, target=shortcode)
         print(lang['func']['load_post']['success'], shortcode)
         for item in os.listdir(full_path):
             if img_index:
@@ -91,6 +89,9 @@ def load_post(shortcode, img_index):
                 if item.endswith('.jpg'):
                     img_path = os.path.join(full_path, item)
                     return img_path
+
+    except Exception as e:
+        print(lang['func']['load_post']['fail'].format(e=e))
 
     return None
 
@@ -161,18 +162,13 @@ async def process_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # User reply
     if content_path:
-        #print('CONTENT PATH:')
-        #print(content_path)
         if content_path[0] == 'reel':
-            #print('Video')
-            #print(content_path[1])
             await update.message.reply_video(content_path[1])
         elif content_path[0] == 'post':
-            #print('Post')
-            #print(content_path[1])
             await update.message.reply_photo(content_path[1])
         #asyncio.sleep(3)
         shutil.rmtree(os.path.dirname(content_path[1]))
+
         if msg:
             await msg.delete()
 
