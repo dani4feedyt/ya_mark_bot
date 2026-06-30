@@ -1,0 +1,77 @@
+﻿sys_messages:
+  initialisation:
+    Mark_bot is starting...
+  initialised:
+    Mark_bot started successfully!
+  polling_started:
+    Start polling...
+
+triggers:
+  greeting:
+    trigger:
+      - hello
+      - hi
+    reply:
+      Hello, I am Mark_bot!
+  greeting_2:
+    trigger:
+      henlo
+    reply:
+      Henlo, I am Mark_frogt!
+  what's_up:
+    trigger:
+      - how are
+      - what's up
+      - whats up
+    reply:
+      I am totally fine and fully operational (most likely)!
+  bad_word:
+    trigger:
+      - fuck
+      - dick
+    reply:
+      What did I do wrong? I am sorry((( If you have any concerns, please report to my developer.
+  joke:
+    trigger:
+      frog
+    reply:
+      I don't know why my developer so closely associates me with a frog...
+
+func:
+  initiate:
+    Thanks for using me!
+  assist:
+    I am Mark_bot, simple reel (and other) downloader. Just send the link to the chat and I will handle the rest!
+  personalize:
+    Not implemented yet
+  load_reel:
+    success:
+      Successfully downloaded the reel!
+    fail:
+      - >
+        Failed to download the reel: {e}
+  load_post:
+    success:
+      Successfully downloaded the post!
+    fail:
+      - >
+        Failed to download the post: {e}
+  convo:
+    default:
+      - have you called me?
+      - do you need anything?
+      - you wanted anything?
+      - what?
+  msg_process:
+    alias:
+      - mark
+      - марк
+      - מארק
+      - 马克
+      - マク
+    wait:
+      Please wait, reel is being downloaded...
+    error:
+      group:
+        I work only in groups for now
+
