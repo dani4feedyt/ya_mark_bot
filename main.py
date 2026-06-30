@@ -63,8 +63,6 @@ def load_reel(url, shortcode):
             ydl.download([url])
             print(lang['func']['load_reel']['success'])
             for item in os.listdir(dir_target):
-                print(1)
-                print(item)
                 if item.startswith(shortcode):
                     video_path = os.path.join(dir_target, item)
                     return video_path
@@ -75,18 +73,16 @@ def load_reel(url, shortcode):
 
 
 def load_post(shortcode, img_index):
-    print('image_index: ')
-    print(img_index)
+    #print('image_index: ')
+    #print(img_index)
     post = Post.from_shortcode(Loader.context, shortcode)
     dir_target = os.path.join('downloads', shortcode)
-    print(dir_target)
+    #print(dir_target)
     full_path = os.path.abspath(dir_target)
     success = Loader.download_post(post, target=shortcode)
     if success:
         print(lang['func']['load_post']['success'], shortcode)
         for item in os.listdir(full_path):
-            print(1)
-            print(item)
             if img_index:
                 if item.endswith(img_index + '.jpg'):
                     img_path = os.path.join(full_path, item)
@@ -116,7 +112,6 @@ def generate_convo_response(user_input: str) -> str:
 
 
 def respond_to_link(user_input: str) -> (str, bool):
-    print(user_input)
     message_parts = user_input.split(' ')
     link = ''
     path = []
@@ -131,7 +126,6 @@ def respond_to_link(user_input: str) -> (str, bool):
 
     if '/p/' in link:
         shortcode = link.split('/')[-2]
-        print(shortcode)
         try:
             img_index = re.findall(r'(\d+&)', link.split('/')[-1])[0]
             img_index = img_index[:-1]
@@ -149,7 +143,7 @@ async def process_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     content_path = ()
     msg: Message | None = None
 
-    print(f'User ({update.message.chat.id}) in {chat_type}: "{text}"')
+    #print(f'User ({update.message.chat.id}) in {chat_type}: "{text}"')
 
     # Handle groups
     if chat_type == 'supergroup' or chat_type == 'group':
@@ -158,7 +152,7 @@ async def process_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             content_path: () = respond_to_link(text)
         elif any(word in text.lower() for word in lang['func']['msg_process']['alias']):
             response: str = generate_convo_response(text)
-            print('Bot response:', response)
+            #print('Bot response:', response)
             await update.message.reply_text(response)
         else:
             return
@@ -167,15 +161,15 @@ async def process_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # User reply
     if content_path:
-        print('CONTENT PATH:')
-        print(content_path)
+        #print('CONTENT PATH:')
+        #print(content_path)
         if content_path[0] == 'reel':
-            print('Video')
-            print(content_path[1])
+            #print('Video')
+            #print(content_path[1])
             await update.message.reply_video(content_path[1])
         elif content_path[0] == 'post':
-            print('Post')
-            print(content_path[1])
+            #print('Post')
+            #print(content_path[1])
             await update.message.reply_photo(content_path[1])
         #asyncio.sleep(3)
         shutil.rmtree(os.path.dirname(content_path[1]))
