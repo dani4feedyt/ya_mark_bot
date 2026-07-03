@@ -44,12 +44,12 @@ func:
     I am Mark_bot, simple reel (and other) downloader. Just send the link to the chat and I will handle the rest!
   personalize:
     Not implemented yet
-  load_reel:
+  load_video:
     success:
-      Successfully downloaded the reel!
+      Successfully downloaded the video!
     fail:
       - >
-        Failed to download the reel: {e}
+        Failed to download the video: {e}
   load_post:
     success:
       Successfully downloaded the post!

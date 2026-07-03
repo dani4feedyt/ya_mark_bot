@@ -51,7 +51,7 @@ Loader.download_pictures = True
 print(lang['sys_messages']['initialised'])
 
 
-def load_reel(url, shortcode):
+def load_video(url, shortcode):
     dir_target = os.path.join('downloads', shortcode)
     ydl_opts = {
         'ffmpeg_location': './binaries',
@@ -65,13 +65,13 @@ def load_reel(url, shortcode):
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:
             ydl.download([url])
-            print(lang['func']['load_reel']['success'])
+            print(lang['func']['load_video']['success'])
             for item in os.listdir(dir_target):
-                if item.startswith(shortcode):
+                if item.endswith('.mp4'):
                     video_path = os.path.join(dir_target, item)
                     return video_path
         except Exception as e:
-            print(lang['func']['load_reel']['fail'].format(e=e))
+            print(lang['func']['load_video']['fail'].format(e=e))
 
     return None
 
@@ -116,20 +116,20 @@ def generate_convo_response(user_input: str) -> str:
     return random.choice(lang['func']['convo']['default'])
 
 
-def respond_to_link(user_input: str) -> (str, bool):
+def preprocess_link(user_input: str) -> (str, bool):
     message_parts = user_input.split(' ')
     link = ''
-    path = []
+    path = ''
     for item in message_parts:
         if item.startswith('http'):
             link = item
 
-    if '/reel/' in link:
+    if '/reel/' in link or 'tiktok' in link:
         shortcode = link.split('/')[-2]
-        path = load_reel(link, shortcode)
-        return 'reel', path
+        path = load_video(link, shortcode)
+        return 'video', path
 
-    if '/p/' in link:
+    elif '/p/' in link:
         shortcode = link.split('/')[-2]
         try:
             img_index = re.findall(r'(\d+&)', link.split('/')[-1])[0]
@@ -152,9 +152,9 @@ async def process_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Handle groups
     if chat_type == 'supergroup' or chat_type == 'group':
-        if '.instagram.' in text:
+        if '.instagram.' in text or '.tiktok.' in text:
             msg = await update.message.reply_text(lang['func']['msg_process']['wait'])
-            content_path: () = respond_to_link(text)
+            content_path: () = preprocess_link(text)
         elif any(word in text.lower() for word in lang['func']['msg_process']['alias']):
             response: str = generate_convo_response(text)
             #print('Bot response:', response)
@@ -167,7 +167,7 @@ async def process_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # User reply
     if content_path:
         try:
-            if content_path[0] == 'reel':
+            if content_path[0] == 'video':
                 await update.message.reply_video(content_path[1], read_timeout=60, write_timeout=60)
             elif content_path[0] == 'post':
                 await update.message.reply_photo(content_path[1], read_timeout=30, write_timeout=30)
