@@ -74,4 +74,7 @@ func:
     error:
       group:
         I work only in groups for now
+      timeout:
+        - >
+          Error, message reply timed out: {e}
 

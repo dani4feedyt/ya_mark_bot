@@ -9,6 +9,7 @@ import instaloader
 from instaloader import Post
 import yt_dlp
 from telegram import Update, Message
+from telegram.error import TimedOut
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
 with open('lang.yaml', 'r', encoding='utf-8') as file:
@@ -53,6 +54,9 @@ print(lang['sys_messages']['initialised'])
 def load_reel(url, shortcode):
     dir_target = os.path.join('downloads', shortcode)
     ydl_opts = {
+        'ffmpeg_location': './binaries',
+        'format': 'bestvideo+bestaudio/best',
+        'format_sort': ['filesize:50M'],
         'paths': {'home': dir_target},
         'outtmpl': '%(id)s.%(ext)s',
         'quiet': True
@@ -139,7 +143,7 @@ def respond_to_link(user_input: str) -> (str, bool):
 
 
 async def process_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_type: str = update.message.chat.type
+    chat_type: str = update.message.chat.type ##here lies the possibility of message edit spy
     text: str = update.message.text
     content_path = ()
     msg: Message | None = None
@@ -162,15 +166,20 @@ async def process_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # User reply
     if content_path:
-        if content_path[0] == 'reel':
-            await update.message.reply_video(content_path[1])
-        elif content_path[0] == 'post':
-            await update.message.reply_photo(content_path[1])
-        #asyncio.sleep(3)
-        shutil.rmtree(os.path.dirname(content_path[1]))
-
-        if msg:
-            await msg.delete()
+        try:
+            if content_path[0] == 'reel':
+                await update.message.reply_video(content_path[1], read_timeout=60, write_timeout=60)
+            elif content_path[0] == 'post':
+                await update.message.reply_photo(content_path[1], read_timeout=30, write_timeout=30)
+        except Exception as e:
+            print(lang['func']['msg_process']['error']['timeout'].format(e=e))
+        finally:
+            shutil.rmtree(os.path.dirname(content_path[1]))
+            if msg:
+                try:
+                    await msg.delete()
+                except TimedOut:
+                    await msg.delete(read_timeout=5)
 
 
 # Log errors
