@@ -12,12 +12,19 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-            path: /mnt/Pull1/Scripts/ya_mark_bot
-            clean: false
+
+      - name: Sync files to prod folder
+        run: |
+          sudo mkdir -p /mnt/Pull1/Scripts/ya_mark_bot
+          
+          sudo rsync -av --delete \
+            --exclude='.git/' \
+            --exclude='.env' \
+            --exclude='lang.yaml' \
+            ./ /mnt/Pull1/Scripts/ya_mark_bot/
 
       - name: Rebuild and restart container
         run: |
-            cd /mnt/Pull1/Scripts/ya_mark_bot
-            sudo docker compose down
-            sudo docker compose up -d --build
+          cd /mnt/Pull1/Scripts/ya_mark_bot
+          sudo docker compose down
+          sudo docker compose up -d --build
