@@ -98,8 +98,8 @@ def load_video(url, shortcode):
     }
 
     live_status = get_live_status(url, ydl_opts)
-    if live_status is True:
-        print('WARNING: IS LIVE, SKIPPING')
+    if live_status is True or None:
+        print('WARNING: IS OR WAS LIVE, SKIPPING')
         return None, None, None
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
