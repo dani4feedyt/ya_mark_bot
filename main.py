@@ -54,6 +54,8 @@ print(lang['sys_messages']['initialised'])
 def load_video(url, shortcode):
     dir_target = os.path.join('downloads', shortcode)
     ydl_opts = {
+        'external_downloader': 'aria2c',
+        'external_downloader_args': ['-x', '16', '-s', '16', '-k', '1M'],
         #'ffmpeg_location': 'ffmpeg',
         'format': 'bestvideo+bestaudio/best',
         'format_sort': ['filesize:50M'],
