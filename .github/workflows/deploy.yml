@@ -13,18 +13,23 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Sync files to prod folder
+      - name: Sync files to production folder
+        env:
+          SUDO_PASS: ${{ secrets.SUDO_PASSWORD }}
         run: |
-          sudo mkdir -p /mnt/Pull1/Scripts/ya_mark_bot
+          # Pass the secret into sudo -S to bypass the terminal prompt
+          echo "$SUDO_PASS" | sudo -S mkdir -p /mnt/Pull1/Scripts/ya_mark_bot
           
-          sudo rsync -av --delete \
+          echo "$SUDO_PASS" | sudo -S rsync -av --delete \
             --exclude='.git/' \
             --exclude='.env' \
             --exclude='lang.yaml' \
             ./ /mnt/Pull1/Scripts/ya_mark_bot/
 
       - name: Rebuild and restart container
+        env:
+          SUDO_PASS: ${{ secrets.SUDO_PASSWORD }}
         run: |
           cd /mnt/Pull1/Scripts/ya_mark_bot
-          sudo docker compose down
-          sudo docker compose up -d --build
+          echo "$SUDO_PASS" | sudo -S docker compose down
+          echo "$SUDO_PASS" | sudo -S docker compose up -d --build
