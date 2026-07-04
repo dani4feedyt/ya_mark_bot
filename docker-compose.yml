@@ -1,10 +1,10 @@
 ﻿services:
   tg-bot:
     build: .
-    container_name: tgbot
+    container_name: ya_mark_bot
     restart: always
     env_file:
       - .env
     volumes:
       - ./downloads:/app/downloads
-      - ./binaries:/app/binaries
+      - ./lang.yaml:/app/lang.yaml
