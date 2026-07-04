@@ -54,7 +54,7 @@ print(lang['sys_messages']['initialised'])
 def load_video(url, shortcode):
     dir_target = os.path.join('downloads', shortcode)
     ydl_opts = {
-        'ffmpeg_location': './binaries',
+        #'ffmpeg_location': 'ffmpeg',
         'format': 'bestvideo+bestaudio/best',
         'format_sort': ['filesize:50M'],
         'paths': {'home': dir_target},
