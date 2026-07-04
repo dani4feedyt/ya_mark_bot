@@ -67,12 +67,11 @@ def load_video(url, shortcode):
         'recode_video': 'mp4',
         'postprocessor_args': {
             'ffmpeg': [
-                '-hwaccel', 'nvdec',
-                '-c:v', 'libx264',
-                '-preset', 'ultrafast',
-                '-pix_fmt', 'yuv420p',
+                '-c:v', 'h264_nvenc',
+                '-preset', 'p4',       # NVENC preset
+                '-pix_fmt', 'yuv420p', # Critical for iOS
                 '-c:a', 'aac'
-            ]
+    ]
         }
     }
 
