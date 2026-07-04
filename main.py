@@ -65,11 +65,12 @@ def load_video(url, shortcode):
         'quiet': True,
         'recode_video': 'mp4',
         'postprocessor_args': {
-            'ffmpeg': ['-hwaccel', 'cuda',
-                       '-hwaccel_output_format', 'cuda',
-                       '-c:v', 'h264_nvenc',
-                       '-pix_fmt', 'yuv420p',
-                       '-c:a', 'aac']
+            'ffmpeg': [
+                '-hwaccel', 'cuda',
+                '-hwaccel_output_format', 'cuda',
+                '-c:v', 'h264_nvenc',
+                '-c:a', 'aac'
+                ]
         }
     }
 
