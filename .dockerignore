@@ -1,0 +1,7 @@
+﻿.git
+.gitignore
+.gitattributes
+.venv
+.env
+lang.yaml
+binaries/

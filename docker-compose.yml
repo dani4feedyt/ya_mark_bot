@@ -1,0 +1,10 @@
+﻿services:
+  tg-bot:
+    build: .
+    container_name: tgbot
+    restart: always
+    env_file:
+      - .env
+    volumes:
+      - ./downloads:/app/downloads
+      - ./binaries:/app/binaries
