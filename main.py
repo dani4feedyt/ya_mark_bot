@@ -1,7 +1,9 @@
 from typing import Final
 import os
 import re
+import subprocess
 import shutil
+import json
 from dotenv import load_dotenv
 import yaml
 import random
@@ -51,6 +53,21 @@ Loader.download_pictures = True
 print(lang['sys_messages']['initialised'])
 
 
+def get_video_dimensions(path):
+    try:
+        result = subprocess.run(
+            ['ffprobe', '-v', 'error', '-select_streams', 'v:0',
+             '-show_entries', 'stream=width,height',
+             '-of', 'json', path],
+            capture_output=True, text=True, check=True
+        )
+        info = json.loads(result.stdout)['streams'][0]
+        return info['width'], info['height']
+    except Exception as e:
+        print(f"ffprobe dimension read failed: {e}")
+        return None, None
+
+
 def load_video(url, shortcode):
     dir_target = os.path.join('downloads', shortcode)
     ydl_opts = {
@@ -75,11 +92,12 @@ def load_video(url, shortcode):
             for item in os.listdir(dir_target):
                 if item.endswith('.mp4'):
                     video_path = os.path.join(dir_target, item)
-                    return video_path
+                    width, height = get_video_dimensions(video_path)
+                    return video_path, width, height
         except Exception as e:
             print(lang['func']['load_video']['fail'].format(e=e))
 
-    return None
+    return None, None, None
 
 
 def load_post(shortcode, img_index):
@@ -125,15 +143,15 @@ def generate_convo_response(user_input: str) -> str:
 def preprocess_link(user_input: str) -> (str, bool):
     message_parts = user_input.split(' ')
     link = ''
-    path = ''
+    media_args = []
     for item in message_parts:
         if item.startswith('http'):
             link = item
 
     if '/reel/' in link or 'tiktok' in link:
         shortcode = link.split('/')[-2]
-        path = load_video(link, shortcode)
-        return 'video', path
+        media_args = load_video(link, shortcode)
+        return 'video', media_args
 
     elif '/p/' in link:
         shortcode = link.split('/')[-2]
@@ -142,16 +160,17 @@ def preprocess_link(user_input: str) -> (str, bool):
             img_index = img_index[:-1]
         except IndexError:
             img_index = None
-        path = load_post(shortcode, img_index)
-        return 'post', path
+        media_args = load_post(shortcode, img_index)
+        return 'post', media_args
 
-    return None, path
+    return None, media_args
 
 
 async def process_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_type: str = update.message.chat.type ##here lies the possibility of message edit spy
     text: str = update.message.text
-    content_path = ()
+    content_type = ''
+    content_attributes = []
     msg: Message | None = None
 
     #print(f'User ({update.message.chat.id}) in {chat_type}: "{text}"')
@@ -160,7 +179,7 @@ async def process_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if chat_type == 'supergroup' or chat_type == 'group':
         if '.instagram.' in text or '.tiktok.' in text:
             msg = await update.message.reply_text(lang['func']['msg_process']['wait'])
-            content_path: () = preprocess_link(text)
+            content_type, content_attributes = preprocess_link(text)
         elif any(word in text.lower() for word in lang['func']['msg_process']['alias']):
             response: str = generate_convo_response(text)
             #print('Bot response:', response)
@@ -171,16 +190,18 @@ async def process_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(lang['func']['msg_process']['error']['group'])
 
     # User reply
-    if content_path:
+    if content_type:
+        content_path, content_width, content_height = content_attributes
         try:
-            if content_path[0] == 'video':
-                await update.message.reply_video(content_path[1], read_timeout=60, write_timeout=60)
-            elif content_path[0] == 'post':
-                await update.message.reply_photo(content_path[1], read_timeout=30, write_timeout=30)
+            if content_type == 'video':
+                await update.message.reply_video(content_path, width=content_width,
+                                                 height=content_height, read_timeout=60, write_timeout=60)
+            elif content_type == 'post':
+                await update.message.reply_photo(content_path, read_timeout=30, write_timeout=30)
         except Exception as e:
             print(lang['func']['msg_process']['error']['timeout'].format(e=e))
         finally:
-            shutil.rmtree(os.path.dirname(content_path[1]))
+            shutil.rmtree(os.path.dirname(content_path))
             if msg:
                 try:
                     await msg.delete()
