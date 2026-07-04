@@ -67,8 +67,9 @@ def load_video(url, shortcode):
         'recode_video': 'mp4',
         'postprocessor_args': {
             'ffmpeg': [
-                '-c:v', 'h264_nvenc',
-                '-preset', 'p4',
+                '-hwaccel', 'nvdec',
+                '-c:v', 'libx264',
+                '-preset', 'ultrafast',
                 '-pix_fmt', 'yuv420p',
                 '-c:a', 'aac'
             ]
