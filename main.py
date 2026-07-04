@@ -59,7 +59,11 @@ def load_video(url, shortcode):
         'format_sort': ['filesize:50M'],
         'paths': {'home': dir_target},
         'outtmpl': '%(id)s.%(ext)s',
-        'quiet': True
+        'quiet': True,
+        'recode_video': 'mp4',
+        'postprocessor_args': {
+            'ffmpeg': ['-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac']
+        }
     }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
