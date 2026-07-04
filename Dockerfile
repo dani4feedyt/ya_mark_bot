@@ -7,6 +7,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     git \
     aria2 \
+    libnvcuvid1 \
+    libnvidia-encode1 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

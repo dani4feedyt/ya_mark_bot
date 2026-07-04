@@ -8,3 +8,10 @@
     volumes:
       - ./downloads:/app/downloads
       - ./lang.yaml:/app/lang.yaml
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [ gpu ]

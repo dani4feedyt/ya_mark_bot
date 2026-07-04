@@ -64,7 +64,7 @@ def load_video(url, shortcode):
         'quiet': True,
         'recode_video': 'mp4',
         'postprocessor_args': {
-            'ffmpeg': ['-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac']
+            'ffmpeg': ['-c:v', 'h264_nvenc', '-pix_fmt', 'yuv420p', '-c:a', 'aac']
         }
     }
 
