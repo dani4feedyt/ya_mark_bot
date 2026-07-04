@@ -98,7 +98,7 @@ def load_video(url, shortcode):
     }
 
     live_status = get_live_status(url, ydl_opts)
-    if live_status is True or None:
+    if live_status is True or live_status is None:
         print('WARNING: IS OR WAS LIVE, SKIPPING')
         return None, None, None
 
