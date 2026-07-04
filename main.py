@@ -112,16 +112,16 @@ def load_post(shortcode, img_index):
             if img_index:
                 if item.endswith(img_index + '.jpg'):
                     img_path = os.path.join(full_path, item)
-                    return img_path
+                    return img_path, None, None
             else:
                 if item.endswith('.jpg'):
                     img_path = os.path.join(full_path, item)
-                    return img_path
+                    return img_path, None, None
 
     except Exception as e:
         print(lang['func']['load_post']['fail'].format(e=e))
 
-    return None
+    return None, None, None
 
 
 def generate_convo_response(user_input: str) -> str:
