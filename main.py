@@ -75,6 +75,7 @@ def get_live_status(url, ydl_opts_base):
             info = ydl.extract_info(url, download=False)
             return info.get('is_live', False)
     except yt_dlp.utils.DownloadError as e:
+        print("live_download_error")
         if 'not currently live' in str(e).lower():
             return None
         raise
