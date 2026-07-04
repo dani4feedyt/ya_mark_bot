@@ -67,10 +67,11 @@ def load_video(url, shortcode):
         'recode_video': 'mp4',
         'postprocessor_args': {
             'ffmpeg': [
+                '-vf', 'format=yuv420p',
                 '-c:v', 'h264_nvenc',
-                '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2',
                 '-preset', 'p4',
-                '-pix_fmt', 'yuv420p',
+                '-profile:v', 'high',
+                '-level', '4.1',
                 '-c:a', 'aac'
             ]
         }
