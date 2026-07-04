@@ -224,6 +224,8 @@ async def process_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await msg.delete()
                 except TimedOut:
                     await msg.delete(read_timeout=5)
+    else:
+        await update.message.reply_text(lang['func']['msg_process']['error']['no_content'])
 
 
 # Log errors

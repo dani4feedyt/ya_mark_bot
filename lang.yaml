@@ -72,6 +72,8 @@ func:
     wait:
       Please wait, reel is being downloaded...
     error:
+      no_content:
+        Error, invalid link...
       group:
         I work only in groups for now
       timeout:
