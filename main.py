@@ -56,6 +56,7 @@ def load_video(url, shortcode):
     ydl_opts = {
         'external_downloader': 'aria2c',
         'external_downloader_args': ['-x', '16', '-s', '16', '-k', '1M'],
+
         #'ffmpeg_location': 'ffmpeg',
         'format': 'bestvideo+bestaudio/best',
         'format_sort': ['filesize:50M'],
@@ -64,7 +65,11 @@ def load_video(url, shortcode):
         'quiet': True,
         'recode_video': 'mp4',
         'postprocessor_args': {
-            'ffmpeg': ['-c:v', 'h264_nvenc', '-pix_fmt', 'yuv420p', '-c:a', 'aac']
+            'ffmpeg': ['-hwaccel', 'cuda',
+                       '-hwaccel_output_format', 'cuda',
+                       '-c:v', 'h264_nvenc',
+                       '-pix_fmt', 'yuv420p',
+                       '-c:a', 'aac']
         }
     }
 
