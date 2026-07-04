@@ -3,18 +3,8 @@
     build: .
     container_name: ya_mark_bot
     restart: always
-    environment:
-      - NVIDIA_DRIVER_CAPABILITIES=compute,video,utility
-      - NVIDIA_VISIBLE_DEVICES=all
     env_file:
       - .env
     volumes:
       - ./downloads:/app/downloads
       - ./lang.yaml:/app/lang.yaml
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [ gpu ]
