@@ -68,6 +68,18 @@ def get_video_dimensions(path):
         return None, None
 
 
+def get_live_status(url, ydl_opts_base):
+    probe_opts = {**ydl_opts_base, 'quiet': True, 'skip_download': True}
+    try:
+        with yt_dlp.YoutubeDL(probe_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            return info.get('is_live', False)
+    except yt_dlp.utils.DownloadError as e:
+        if 'not currently live' in str(e).lower():
+            return None
+        raise
+
+
 def load_video(url, shortcode):
     dir_target = os.path.join('downloads', shortcode)
     ydl_opts = {
@@ -84,6 +96,11 @@ def load_video(url, shortcode):
             'ffmpeg': ['-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'ultrafast', '-c:a', 'aac']
         }
     }
+
+    live_status = get_live_status(url, ydl_opts)
+    if live_status is True:
+        print('WARNING: IS LIVE, SKIPPING')
+        return None, None, None
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:
