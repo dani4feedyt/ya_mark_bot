@@ -188,7 +188,7 @@ async def process_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_type: str = update.message.chat.type ##here lies the possibility of message edit spy
     text: str = update.message.text
     content_type = ''
-    content_attributes = []
+    content_attributes = (None, None, None)
     msg: Message | None = None
 
     #print(f'User ({update.message.chat.id}) in {chat_type}: "{text}"')
@@ -207,9 +207,9 @@ async def process_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text(lang['func']['msg_process']['error']['group'])
 
-    # User reply
-    if content_type:
-        content_path, content_width, content_height = content_attributes
+    content_path = content_attributes[0] if content_attributes else None
+    if content_type and content_path:
+        content_width, content_height = content_attributes[1], content_attributes[2]
         try:
             if content_type == 'video':
                 await update.message.reply_video(content_path, width=content_width,
@@ -219,7 +219,7 @@ async def process_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             print(lang['func']['msg_process']['error']['timeout'].format(e=e))
         finally:
-            shutil.rmtree(os.path.dirname(content_path))
+            shutil.rmtree(os.path.dirname(content_path), ignore_errors=True)
             if msg:
                 try:
                     await msg.delete()
@@ -227,6 +227,11 @@ async def process_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await msg.delete(read_timeout=5)
     else:
         await update.message.reply_text(lang['func']['msg_process']['error']['no_content'])
+        if msg:
+            try:
+                await msg.delete()
+            except TimedOut:
+                await msg.delete(read_timeout=5)
 
 
 # Log errors
