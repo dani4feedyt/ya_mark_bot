@@ -24,6 +24,9 @@ API_TOKEN: Final = os.getenv('API_TOKEN')
 BOT_HANDLE: Final = os.getenv('BOT_HANDLE')
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+MAX_DURATION_SECONDS = 600
+COMPRESS_THRESHOLD_SECONDS = 120
+MAX_FILESIZE_BYTES = 300 * 1024 * 1024
 
 for folder in os.listdir(os.path.abspath('downloads')):
     f_path = os.path.abspath(os.path.join('downloads', folder))
@@ -68,40 +71,78 @@ def get_video_dimensions(path):
         return None, None
 
 
-def get_live_status(url, ydl_opts_base):
+def probe_video(url, ydl_opts_base):
     probe_opts = {**ydl_opts_base, 'quiet': True, 'skip_download': True}
     try:
         with yt_dlp.YoutubeDL(probe_opts) as ydl:
             info = ydl.extract_info(url, download=False)
-            return info.get('is_live', False)
+            return {
+                'is_live': info.get('is_live', False),
+                'duration': info.get('duration'),
+                'filesize_approx': info.get('filesize_approx') or info.get('filesize'),
+            }
     except yt_dlp.utils.DownloadError as e:
-        print("live_download_error")
         if 'not currently live' in str(e).lower():
-            return None
-        raise
+            return {'is_live': None, 'duration': None, 'filesize_approx': None}
+        return None
 
 
 def load_video(url, shortcode):
     dir_target = os.path.join('downloads', shortcode)
-    ydl_opts = {
+
+    base_opts = {
         'external_downloader': 'aria2c',
         'external_downloader_args': ['-x', '16', '-s', '16', '-k', '1M'],
-        #'ffmpeg_location': 'ffmpeg',
         'format': 'bestvideo+bestaudio/best',
         'format_sort': ['filesize:50M'],
         'paths': {'home': dir_target},
         'outtmpl': '%(id)s.%(ext)s',
         'quiet': True,
         'recode_video': 'mp4',
-        'postprocessor_args': {
-            'ffmpeg': ['-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'ultrafast', '-c:a', 'aac']
-        }
     }
 
-    live_status = get_live_status(url, ydl_opts)
-    if live_status is True or live_status is None:
+    info = probe_video(url, base_opts)
+    if info is None:
+        print('WARNING: METADATA PROBE UNSUCCESSFUL, SKIPPING')
+        return None, None, None
+
+    if info.get('is_live') is True or info.get('is_live') is None:
         print('WARNING: IS OR WAS LIVE, SKIPPING')
         return None, None, None
+
+    duration = info.get('duration')
+    filesize = info.get('filesize_approx')
+
+    if duration and duration > MAX_DURATION_SECONDS:
+        print('WARNING: TOO LONG, SKIPPING')
+        return None, None, None
+
+    if filesize and filesize > MAX_FILESIZE_BYTES:
+        print('WARNING: TOO LARGE, SKIPPING')
+        return None, None, None
+
+    heavy_compress = bool(duration and duration > COMPRESS_THRESHOLD_SECONDS)
+
+    if heavy_compress:
+        ffmpeg_args = [
+            '-c:v', 'libx264',
+            '-preset', 'veryfast',
+            '-crf', '30',
+            '-vf', 'scale=-2:720',
+            '-pix_fmt', 'yuv420p',
+            '-c:a', 'aac',
+            '-b:a', '96k'
+        ]
+    else:
+        ffmpeg_args = [
+            '-c:v', 'libx264',
+            '-preset', 'ultrafast',
+            '-crf', '23',
+            '-pix_fmt', 'yuv420p',
+            '-c:a', 'aac'
+        ]
+
+    ydl_opts = {**base_opts, 'postprocessor_args': {'ffmpeg': ffmpeg_args}}
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:
