@@ -177,7 +177,7 @@ def preprocess_link(user_input: str) -> (str, bool):
             img_index = re.findall(r'(\d+&)', link.split('/')[-1])[0]
             img_index = img_index[:-1]
         except IndexError:
-            img_index = None
+            img_index = 1
         media_args = load_post(shortcode, img_index)
         return 'post', media_args
 
