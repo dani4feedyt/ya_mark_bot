@@ -301,7 +301,11 @@ def preprocess_link(user_input: str) -> (str, bool):
 
 
 async def process_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_type: str = update.message.chat.type ##here lies the possibility of message edit spy
+    msg_obj = update.message or update.channel_post
+    if msg_obj is None:
+        return
+
+    chat_type: str = msg_obj.chat.type ##here lies the possibility of message edit spy
     text: str = update.message.text
     content_type = ''
     content_attributes = (None, None, None)
@@ -309,29 +313,28 @@ async def process_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     #print(f'User ({update.message.chat.id}) in {chat_type}: "{text}"')
 
-    # Handle groups
-    if chat_type == 'supergroup' or chat_type == 'group' or chat_type == 'channel':
-        if '.instagram.' in text or '.tiktok.' in text:
-            msg = await update.message.reply_text(lang['func']['msg_process']['wait'])
+    if chat_type in ('supergroup', 'group', 'channel'):
+        if text and ('.instagram.' in text or '.tiktok.' in text):
+            msg = await msg_obj.reply_text(lang['func']['msg_process']['wait'])
             content_type, content_attributes = preprocess_link(text)
         elif any(word in text.lower() for word in lang['func']['msg_process']['alias']):
             response: str = generate_convo_response(text)
             #print('Bot response:', response)
-            await update.message.reply_text(response)
+            await msg_obj.reply_text(response)
         else:
             return
     else:
-        await update.message.reply_text(lang['func']['msg_process']['error']['group'])
+        await msg_obj.reply_text(lang['func']['msg_process']['error']['group'])
 
     content_path = content_attributes[0] if content_attributes else None
     if content_type and content_path:
         content_width, content_height = content_attributes[1], content_attributes[2]
         try:
             if content_type == 'video':
-                await update.message.reply_video(content_path, width=content_width,
+                await msg_obj.reply_video(content_path, width=content_width,
                                                  height=content_height, read_timeout=60, write_timeout=60)
             elif content_type == 'post':
-                await update.message.reply_photo(content_path, read_timeout=30, write_timeout=30)
+                await msg_obj.reply_photo(content_path, read_timeout=30, write_timeout=30)
         except Exception as e:
             print(lang['func']['msg_process']['error']['timeout'].format(e=e))
         finally:
@@ -342,7 +345,7 @@ async def process_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 except TimedOut:
                     await msg.delete(read_timeout=5)
     else:
-        await update.message.reply_text(lang['func']['msg_process']['error']['no_content'])
+        await msg_obj.reply_text(lang['func']['msg_process']['error']['no_content'])
         if msg:
             try:
                 await msg.delete()
