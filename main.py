@@ -306,7 +306,7 @@ async def process_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     chat_type: str = msg_obj.chat.type ##here lies the possibility of message edit spy
-    text: str = update.message.text
+    text: str = msg_obj.text
     content_type = ''
     content_attributes = (None, None, None)
     msg: Message | None = None
