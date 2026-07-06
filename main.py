@@ -27,6 +27,8 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MAX_DURATION_SECONDS = 600
 COMPRESS_THRESHOLD_SECONDS = 120
 MAX_FILESIZE_BYTES = 300 * 1024 * 1024
+MAX_VIDEO_MB = 50
+TARGET_SIZE_MB = 47
 
 for folder in os.listdir(os.path.abspath('downloads')):
     f_path = os.path.abspath(os.path.join('downloads', folder))
@@ -85,6 +87,66 @@ def probe_video(url, ydl_opts_base):
         if 'not currently live' in str(e).lower():
             return {'is_live': None, 'duration': None, 'filesize_approx': None}
         return None
+
+
+def calc_bitrate(duration_s, target=TARGET_SIZE_MB, audio_kbps=128):
+    target_bits = target * 8 * 1024 * 1024
+    total_kbps = target_bits / duration_s / 1000
+    return max(int(total_kbps - audio_kbps), 300)
+
+
+def get_duration(path):
+    try:
+        result = subprocess.run(
+            ['ffprobe', '-v', 'error', '-show_entries', 'format=duration',
+             '-of', 'default=noprint_wrappers=1:nokey=1', path],
+            capture_output=True, text=True, check=True
+        )
+        return float(result.stdout.strip())
+    except Exception as e:
+        print(f'duration read failed: {e}')
+        return None
+
+
+def shrink_vid(video_path, duration_s, target_mb):
+    video_kbps = calc_bitrate(duration_s, target_mb)
+    tmp_path = video_path + '.tmp.mp4'
+    cmd = [
+        'ffmpeg', '-y', '-i', video_path,
+        '-c:v', 'libx264', '-preset', 'veryfast',
+        '-b:v', f'{video_kbps}k', '-maxrate', f'{int(video_kbps * 1.2)}k',
+        '-bufsize', f'{video_kbps * 2}k',
+        '-c:a', 'aac', '-b:a', '128k',
+        '-pix_fmt', 'yuv420p',
+        tmp_path
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        print('error, shrink failed')
+        return video_path, False
+
+    os.replace(tmp_path, video_path)
+    return video_path, True
+
+
+def ensure_fits(video_path, duration_s, max_mb=MAX_VIDEO_MB, attempts=2):
+    target_mb = TARGET_SIZE_MB
+    fits = False
+    for attempt in range(attempts):
+        size_mb = os.path.getsize(video_path) / (1024 * 1024)
+        if size_mb <= max_mb:
+            return video_path, True
+
+        #print(f'attempt {attempt + 1}, size: {size_mb}')
+        video_path, success = shrink_vid(video_path, duration_s, target_mb)
+        if not success:
+            break
+        target_mb *= 0.7
+
+    final_size_mb = os.path.getsize(video_path) / (1024 * 1024)
+    if final_size_mb <= max_mb:
+        fits = True
+    return video_path, fits
 
 
 def load_video(url, shortcode):
@@ -151,6 +213,19 @@ def load_video(url, shortcode):
             for item in os.listdir(dir_target):
                 if item.endswith('.mp4'):
                     video_path = os.path.join(dir_target, item)
+                    size_mb = os.path.getsize(video_path) / (1024 * 1024)
+                    #print("Source size: ")
+                    #print(os.path.getsize(video_path) / (1024 * 1024))
+                    if size_mb > MAX_VIDEO_MB:
+                        print('exceeds 50 mb, shrinking')
+                        #print("duration:" + str(duration))
+                        real_duration = get_duration(video_path) or duration or 60
+                        video_path, fits = ensure_fits(video_path, real_duration)
+                        #print("Shrinked size: ")
+                        #print(os.path.getsize(video_path) / (1024 * 1024))
+                        if not fits:
+                            print('failed to fit')
+                            return None, None, None
                     width, height = get_video_dimensions(video_path)
                     return video_path, width, height
         except Exception as e:

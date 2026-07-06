@@ -47,15 +47,13 @@ func:
   load_video:
     success:
       Successfully downloaded the video!
-    fail:
-      - >
-        Failed to download the video: {e}
+    fail: >
+      Failed to download the video: {e}
   load_post:
     success:
       Successfully downloaded the post!
-    fail:
-      - >
-        Failed to download the post: {e}
+    fail: >
+      Failed to download the post: {e}
   convo:
     default:
       - have you called me?
@@ -76,7 +74,6 @@ func:
         Error, invalid link...
       group:
         I work only in groups for now
-      timeout:
-        - >
-          Error, message reply timed out: {e}
+      timeout: >
+        Error, message reply timed out: {e}
 
