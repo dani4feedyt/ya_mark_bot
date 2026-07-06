@@ -310,7 +310,7 @@ async def process_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     #print(f'User ({update.message.chat.id}) in {chat_type}: "{text}"')
 
     # Handle groups
-    if chat_type == 'supergroup' or chat_type == 'group':
+    if chat_type == 'supergroup' or chat_type == 'group' or chat_type == 'channel':
         if '.instagram.' in text or '.tiktok.' in text:
             msg = await update.message.reply_text(lang['func']['msg_process']['wait'])
             content_type, content_attributes = preprocess_link(text)
