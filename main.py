@@ -317,7 +317,7 @@ async def process_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if text and ('.instagram.' in text or '.tiktok.' in text):
             msg = await msg_obj.reply_text(lang['func']['msg_process']['wait'])
             content_type, content_attributes = preprocess_link(text)
-        elif any(word in text.lower() for word in lang['func']['msg_process']['alias']):
+        elif text and any(word in text.lower() for word in lang['func']['msg_process']['alias']):
             response: str = generate_convo_response(text)
             #print('Bot response:', response)
             await msg_obj.reply_text(response)
@@ -325,6 +325,7 @@ async def process_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
     else:
         await msg_obj.reply_text(lang['func']['msg_process']['error']['group'])
+        return
 
     content_path = content_attributes[0] if content_attributes else None
     if content_type and content_path:
