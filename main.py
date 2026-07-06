@@ -321,6 +321,7 @@ async def process_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             response: str = generate_convo_response(text)
             #print('Bot response:', response)
             await msg_obj.reply_text(response)
+            return
         else:
             return
     else:
