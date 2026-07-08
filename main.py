@@ -291,7 +291,7 @@ def load_tiktok_post(url, shortcode):
     cmd = ['gallery-dl', '-D', dir_target, url]
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
-        print('gallery-dl failed')
+        print(f'gallery-dl failed: {result.stderr[-500:]}')
         return None, None
 
     images = sorted(glob.glob(os.path.join(dir_target, '*.jpg')))
