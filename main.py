@@ -379,14 +379,20 @@ def preprocess_link(user_input: str) -> (str, bool):
     for item in message_parts:
         if item.startswith('http'):
             link = item
+            break
+
+    if not link:
+        return None, media_args
+
+    clean_link = link.split('?')[0].rstrip('/')
+    shortcode = clean_link.split('/')[-1]
+    print("shortcode:" + shortcode)
 
     if probe_link(link) == 'video':
-        shortcode = link.split('/')[-2]
         media_args = load_video(link, shortcode)
         return 'video', media_args
 
     elif probe_link(link) == 'photo':
-        shortcode = link.split('/')[-2]
         if '/p/' in link:
             try:
                 img_index = re.findall(r'(\d+&)', link.split('/')[-1])[0]
@@ -397,6 +403,9 @@ def preprocess_link(user_input: str) -> (str, bool):
             return 'post', media_args
         else:
             images, audio_path = load_tiktok_post(link, shortcode)
+            if images is None:
+                print("Download failed.")
+                return None, media_args
             out_path = os.path.join('downloads', shortcode, f"{shortcode}.mp4")
             media_args = build_slideshow(images, audio_path, out_path)
             return 'video', media_args
