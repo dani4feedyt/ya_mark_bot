@@ -337,6 +337,9 @@ def build_slideshow(images, audio_path, out_path):
         '-preset', 'veryfast',
         '-pix_fmt', 'yuv420p',
         '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2',
+        '-r', '30',
+        '-g', '30',
+        '-keyint_min', '30',
         '-t', str(target_duration),
         out_path
     ])
