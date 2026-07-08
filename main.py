@@ -2,6 +2,7 @@ from typing import Final
 import os
 import re
 import subprocess
+import math
 import shutil
 import json
 from dotenv import load_dotenv
@@ -9,7 +10,9 @@ import yaml
 import random
 import instaloader
 from instaloader import Post
+import urllib.request
 import yt_dlp
+import glob
 from telegram import Update, Message
 from telegram.error import TimedOut
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
@@ -29,6 +32,9 @@ COMPRESS_THRESHOLD_SECONDS = 120
 MAX_FILESIZE_BYTES = 300 * 1024 * 1024
 MAX_VIDEO_MB = 50
 TARGET_SIZE_MB = 47
+
+SLIDESHOW_SECONDS_PER_IMAGE = 5
+SLIDESHOW_TARGET_DURATION = 20
 
 for folder in os.listdir(os.path.abspath('downloads')):
     f_path = os.path.abspath(os.path.join('downloads', folder))
@@ -58,6 +64,28 @@ Loader.download_pictures = True
 print(lang['sys_messages']['initialised'])
 
 
+def probe_link(url):
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+    if '/photo/' in url or '/p/' in url:
+        return 'photo'
+    if '/video/' in url or '/reel/' in url:
+        return 'video'
+    try:
+        req = urllib.request.Request(url, headers=headers, method='HEAD')
+        with urllib.request.urlopen(req, timeout=5) as response:
+            final_url = response.geturl()
+            if '/photo/' in final_url or '/p/' in final_url:
+                return 'photo'
+            elif '/video/' in final_url or '/reel/' in final_url:
+                return 'video'
+            else:
+                return None
+
+    except Exception as e:
+        print(f"Network error resolving link: {e}")
+        return None
+
+
 def get_video_dimensions(path):
     try:
         result = subprocess.run(
@@ -74,10 +102,12 @@ def get_video_dimensions(path):
 
 
 def probe_video(url, ydl_opts_base):
-    probe_opts = {**ydl_opts_base, 'quiet': True, 'skip_download': True}
+    probe_opts = {**ydl_opts_base, 'quiet': False, 'skip_download': True}
     try:
+        print("11")
         with yt_dlp.YoutubeDL(probe_opts) as ydl:
             info = ydl.extract_info(url, download=False)
+            print(info)
             return {
                 'is_live': info.get('is_live', False),
                 'duration': info.get('duration'),
@@ -214,15 +244,10 @@ def load_video(url, shortcode):
                 if item.endswith('.mp4'):
                     video_path = os.path.join(dir_target, item)
                     size_mb = os.path.getsize(video_path) / (1024 * 1024)
-                    #print("Source size: ")
-                    #print(os.path.getsize(video_path) / (1024 * 1024))
                     if size_mb > MAX_VIDEO_MB:
                         print('exceeds 50 mb, shrinking')
-                        #print("duration:" + str(duration))
                         real_duration = get_duration(video_path) or duration or 60
                         video_path, fits = ensure_fits(video_path, real_duration)
-                        #print("Shrinked size: ")
-                        #print(os.path.getsize(video_path) / (1024 * 1024))
                         if not fits:
                             print('failed to fit')
                             return None, None, None
@@ -236,6 +261,7 @@ def load_video(url, shortcode):
 
 def load_post(shortcode, img_index):
     post = Post.from_shortcode(Loader.context, shortcode)
+    print(json.dumps(post._node, indent=2, default=str))
     dir_target = os.path.join('downloads', shortcode)
     full_path = os.path.abspath(dir_target)
 
@@ -256,6 +282,75 @@ def load_post(shortcode, img_index):
         print(lang['func']['load_post']['fail'].format(e=e))
 
     return None, None, None
+
+
+def load_tiktok_post(url, shortcode):
+    dir_target = os.path.join('downloads', shortcode)
+    os.makedirs(dir_target, exist_ok=True)
+
+    cmd = ['gallery-dl', '-D', dir_target, url]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        print('gallery-dl failed')
+        return None, None
+
+    images = sorted(glob.glob(os.path.join(dir_target, '*.jpg')))
+    audio_files = glob.glob(os.path.join(dir_target, '*.m4a')) + glob.glob(os.path.join(dir_target, '*.mp3'))
+    audio_path = audio_files[0] if audio_files else None
+
+    return images, audio_path
+
+
+def build_slideshow(images, audio_path, out_path):
+    seconds_per_image = SLIDESHOW_SECONDS_PER_IMAGE
+    target_duration = SLIDESHOW_TARGET_DURATION
+
+    num_images = len(images)
+    total_duration = num_images * seconds_per_image
+
+    if total_duration > target_duration:
+        duration_per_image = target_duration / num_images
+        loop_count = 1
+    else:
+        duration_per_image = seconds_per_image
+        loop_count = math.ceil(target_duration / total_duration)
+
+    concat_list = out_path + '.txt'
+    with open(concat_list, 'w') as f:
+        for _ in range(loop_count):
+            for img in images:
+                safe_path = os.path.abspath(img).replace('\\', '/')
+                f.write(f"file '{safe_path}'\n")
+                f.write(f"duration {duration_per_image}\n")
+        f.write(f"file '{safe_path}'\n")
+
+    cmd = ['ffmpeg', '-y']
+    cmd.extend(['-f', 'concat', '-safe', '0', '-i', concat_list])
+    if audio_path:
+        cmd.extend([
+            '-stream_loop', '-1',
+            '-i', audio_path,
+            '-c:a', 'aac'
+        ])
+    cmd.extend([
+        '-c:v', 'libx264',
+        '-preset', 'veryfast',
+        '-pix_fmt', 'yuv420p',
+        '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2',
+        '-t', str(target_duration),
+        out_path
+    ])
+
+    result = subprocess.run(cmd, capture_output=True, text=True)
+
+    if result.returncode != 0:
+        print(f"FFmpeg Error: {result.stderr}")
+        return None, None, None
+
+    if os.path.exists(concat_list):
+        os.remove(concat_list)
+
+    return os.path.abspath(out_path), None, None
 
 
 def generate_convo_response(user_input: str) -> str:
@@ -282,20 +377,26 @@ def preprocess_link(user_input: str) -> (str, bool):
         if item.startswith('http'):
             link = item
 
-    if '/reel/' in link or 'tiktok' in link:
+    if probe_link(link) == 'video':
         shortcode = link.split('/')[-2]
         media_args = load_video(link, shortcode)
         return 'video', media_args
 
-    elif '/p/' in link:
+    elif probe_link(link) == 'photo':
         shortcode = link.split('/')[-2]
-        try:
-            img_index = re.findall(r'(\d+&)', link.split('/')[-1])[0]
-            img_index = img_index[:-1]
-        except IndexError:
-            img_index = 1
-        media_args = load_post(shortcode, img_index)
-        return 'post', media_args
+        if '/p/' in link:
+            try:
+                img_index = re.findall(r'(\d+&)', link.split('/')[-1])[0]
+                img_index = img_index[:-1]
+            except IndexError:
+                img_index = 1
+            media_args = load_post(shortcode, img_index)
+            return 'post', media_args
+        else:
+            images, audio_path = load_tiktok_post(link, shortcode)
+            out_path = os.path.join('downloads', shortcode, f"{shortcode}.mp4")
+            media_args = build_slideshow(images, audio_path, out_path)
+            return 'video', media_args
 
     return None, media_args
 
@@ -330,6 +431,8 @@ async def process_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     content_path = content_attributes[0] if content_attributes else None
     if content_type and content_path:
+        print(content_type)
+        print(content_path)
         content_width, content_height = content_attributes[1], content_attributes[2]
         try:
             if content_type == 'video':
