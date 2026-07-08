@@ -243,7 +243,7 @@ def load_post(shortcode, img_index):
         Loader.download_post(post, target=shortcode)
         print(lang['func']['load_post']['success'], shortcode)
         for item in os.listdir(full_path):
-            if int(img_index) > 1:
+            if post.typename == 'GraphSidecar':
                 if item.endswith(str(img_index) + '.jpg'):
                     img_path = os.path.join(full_path, item)
                     return img_path, None, None
