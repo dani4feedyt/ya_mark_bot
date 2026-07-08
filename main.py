@@ -336,7 +336,7 @@ def build_slideshow(images, audio_path, out_path):
         '-c:v', 'libx264',
         '-preset', 'veryfast',
         '-pix_fmt', 'yuv420p',
-        '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2',
+        '-vf', 'scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2,setsar=1',
         '-r', '30',
         '-g', '30',
         '-keyint_min', '30',
