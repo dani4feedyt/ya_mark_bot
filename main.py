@@ -244,7 +244,7 @@ def load_post(shortcode, img_index):
         print(lang['func']['load_post']['success'], shortcode)
         for item in os.listdir(full_path):
             if img_index:
-                if item.endswith(img_index + '.jpg'):
+                if item.endswith(str(img_index) + '.jpg'):
                     img_path = os.path.join(full_path, item)
                     return img_path, None, None
             else:
