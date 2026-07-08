@@ -261,27 +261,76 @@ def load_video(url, shortcode):
 
 def load_post(shortcode, img_index):
     post = Post.from_shortcode(Loader.context, shortcode)
-    print(json.dumps(post._node, indent=2, default=str))
     dir_target = os.path.join('downloads', shortcode)
     full_path = os.path.abspath(dir_target)
+    img_path = None
+    audio_path = None
 
     try:
         Loader.download_post(post, target=shortcode)
         print(lang['func']['load_post']['success'], shortcode)
         for item in os.listdir(full_path):
-            if post.typename == 'GraphSidecar':
-                if item.endswith(str(img_index) + '.jpg'):
-                    img_path = os.path.join(full_path, item)
-                    return img_path, None, None
-            else:
-                if item.endswith('.jpg'):
-                    img_path = os.path.join(full_path, item)
-                    return img_path, None, None
+            item_path = os.path.join(full_path, item)
+            if post.typename == 'GraphSidecar' and item.endswith(f"{img_index}.jpg"):
+                img_path = item_path
+            elif post.typename != 'GraphSidecar' and item.endswith('.jpg'):
+                img_path = item_path
+
+        print(f"Attempting to extract audio for {shortcode}...")
+        url = f"https://www.instagram.com/p/{shortcode}/"
+
+        ydl_opts = {
+            'format': 'bestaudio/best',
+            'outtmpl': os.path.join(full_path, f'{shortcode}_audio.%(ext)s'),
+            'postprocessors': [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': '192',
+            }],
+            'quiet': True,
+            'no_warnings': True,
+        }
+
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([url])
+                audio_path = os.path.join(full_path, f"{shortcode}_audio.mp3")
+                print("Audio extracted successfully!")
+        except Exception as e:
+            print(f"No audio found or failed to extract: {e}")
+
+        return img_path, audio_path
 
     except Exception as e:
         print(lang['func']['load_post']['fail'].format(e=e))
 
-    return None, None, None
+    return img_path, audio_path
+
+
+def combine_img_audio(img_path, audio_path, out_path):
+    if not img_path or not audio_path:
+        print("Error: Both image and audio paths must be valid.")
+        return None, None, None
+
+    cmd = [
+        'ffmpeg', '-y',
+        '-loop', '1',
+        '-i', img_path,
+        '-i', audio_path,
+        '-c:v', 'libx264',
+        '-tune', 'stillimage',
+        '-c:a', 'aac',
+        '-b:a', '192k',
+        '-pix_fmt', 'yuv420p',
+        '-shortest',
+        out_path
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+
+    if result.returncode != 0:
+        print(f"FFmpeg Error:\n{result.stderr}")
+        return None, None, None
+    return os.path.abspath(out_path), None, None
 
 
 def load_tiktok_post(url, shortcode):
@@ -386,6 +435,7 @@ def preprocess_link(user_input: str) -> (str, bool):
 
     clean_link = link.split('?')[0].rstrip('/')
     shortcode = clean_link.split('/')[-1]
+    out_path = os.path.join('downloads', shortcode, f"{shortcode}.mp4")
     print("shortcode:" + shortcode)
 
     if probe_link(link) == 'video':
@@ -399,14 +449,20 @@ def preprocess_link(user_input: str) -> (str, bool):
                 img_index = img_index[:-1]
             except IndexError:
                 img_index = 1
-            media_args = load_post(shortcode, img_index)
-            return 'post', media_args
+            image_path, audio_path = load_post(shortcode, img_index)
+            if audio_path:
+                media_args = combine_img_audio(image_path, audio_path, out_path)
+
+                return 'video', media_args
+            else:
+                media_args = image_path, None, None
+                return 'post', media_args
         else:
             images, audio_path = load_tiktok_post(link, shortcode)
             if images is None:
                 print("Download failed.")
                 return None, media_args
-            out_path = os.path.join('downloads', shortcode, f"{shortcode}.mp4")
+            #out_path = os.path.join('downloads', shortcode, f"{shortcode}.mp4")
             media_args = build_slideshow(images, audio_path, out_path)
             return 'video', media_args
 
