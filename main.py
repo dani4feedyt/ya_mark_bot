@@ -138,6 +138,27 @@ def get_duration(path):
         return None
 
 
+def convert_to_jpg(input_path, output_path):
+    cmd = [
+        'ffmpeg',
+        '-y',
+        '-i', input_path,
+        '-q:v', '2',
+        output_path
+    ]
+
+    try:
+        subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        print(f"Successfully converted to {output_path}")
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"Error during conversion: {e.stderr.decode()}")
+        return False
+
+
+# Example usage
+convert_to_jpg('input.png', 'output.jpg')
+
 def shrink_vid(video_path, duration_s, target_mb):
     video_kbps = calc_bitrate(duration_s, target_mb)
     tmp_path = video_path + '.tmp.mp4'
@@ -269,12 +290,24 @@ def load_post(shortcode, img_index):
     try:
         Loader.download_post(post, target=shortcode)
         print(lang['func']['load_post']['success'], shortcode)
+
+        img_extensions = ('.jpg', '.jpeg', '.webp', '.png')
+
         for item in os.listdir(full_path):
             item_path = os.path.join(full_path, item)
-            if post.typename == 'GraphSidecar' and item.endswith(f"{img_index}.jpg"):
-                img_path = item_path
-            elif post.typename != 'GraphSidecar' and item.endswith('.jpg'):
-                img_path = item_path
+
+            is_sidecar_match = post.typename == 'GraphSidecar' and any(
+                item.endswith(f"{img_index}{ext}") for ext in img_extensions)
+            is_single_match = post.typename != 'GraphSidecar' and any(item.endswith(ext) for ext in img_extensions)
+
+            if is_sidecar_match or is_single_match:
+                converted_path = os.path.join(full_path, f"standardized_{shortcode}_{img_index}.jpg")
+                success = convert_to_jpg(item_path, converted_path)
+                if success:
+                    img_path = converted_path
+                else:
+                    img_path = item_path
+                break
 
         print(f"Attempting to extract audio for {shortcode}...")
         url = f"https://www.instagram.com/p/{shortcode}/"
