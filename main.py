@@ -154,9 +154,6 @@ def convert_to_jpg(input_path, output_path):
         return False
 
 
-# Example usage
-convert_to_jpg('input.png', 'output.jpg')
-
 def shrink_vid(video_path, duration_s, target_mb):
     video_kbps = calc_bitrate(duration_s, target_mb)
     tmp_path = video_path + '.tmp.mp4'
