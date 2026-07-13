@@ -104,10 +104,8 @@ def get_video_dimensions(path):
 def probe_video(url, ydl_opts_base):
     probe_opts = {**ydl_opts_base, 'quiet': False, 'skip_download': True}
     try:
-        print("11")
         with yt_dlp.YoutubeDL(probe_opts) as ydl:
             info = ydl.extract_info(url, download=False)
-            print(info)
             return {
                 'is_live': info.get('is_live', False),
                 'duration': info.get('duration'),
