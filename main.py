@@ -464,28 +464,32 @@ def build_slideshow(images, audio_path, out_path):
 
 
 async def send_carousel_prompt(msg_obj, images, shortcode):
+    preview_message_ids = []
     numbered = list(enumerate(images, start=1))
     for chunk in chunk_list(numbered, TG_MAX_MEDIA_CHUNK):
         media = [InputMediaPhoto(open(p, 'rb'), caption=str(i)) for i, p in chunk]
-        await msg_obj.reply_media_group(media)
+        sent_messages = await msg_obj.reply_media_group(media)
+        preview_message_ids.extend(m.message_id for m in sent_messages)
 
     prompt = await msg_obj.reply_text(
-        "reply to this message with sequence"
+        "reply with sequence"
     )
     pending_carousels[prompt.message_id] = {
         'paths': images,
         'requester_id': msg_obj.from_user.id if msg_obj.from_user else None,
+        'chat_id': msg_obj.chat.id,
+        'preview_message_ids': preview_message_ids
     }
 
 
-async def handle_carousel_reply(msg_obj):
+async def handle_carousel_reply(msg_obj, context: ContextTypes.DEFAULT_TYPE):
     session = pending_carousels.get(msg_obj.reply_to_message.message_id)
     if session is None:
         return
 
     if session['requester_id'] is not None:
         if not msg_obj.from_user or msg_obj.from_user.id != session['requester_id']:
-            return  # because not the original sender
+            return
 
     indices = parse_image_sequence(msg_obj.text or '', len(session['paths']))
     if not indices:
@@ -494,9 +498,16 @@ async def handle_carousel_reply(msg_obj):
 
     chosen = [session['paths'][i - 1] for i in indices]
 
-    for chunk in chunk_list(chosen, 10):
+    for chunk in chunk_list(chosen, TG_MAX_MEDIA_CHUNK):
         media = [InputMediaPhoto(open(p, 'rb')) for p in chunk]
         await msg_obj.reply_media_group(media)
+
+    chat_id = session['chat_id']
+    for message_id in session['preview_message_ids']:
+        try:
+            await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
+        except Exception as e:
+            print(f'Failed to delete preview: {e}')
 
     shutil.rmtree(os.path.dirname(session['paths'][0]), ignore_errors=True)
     del pending_carousels[msg_obj.reply_to_message.message_id]
@@ -568,7 +579,7 @@ async def process_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if msg_obj is None:
         return
     if msg_obj.reply_to_message and msg_obj.reply_to_message.message_id in pending_carousels:
-        await handle_carousel_reply(msg_obj)
+        await handle_carousel_reply(msg_obj, context)
         return
 
     chat_type: str = msg_obj.chat.type
