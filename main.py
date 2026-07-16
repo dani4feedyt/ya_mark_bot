@@ -13,7 +13,7 @@ from instaloader import Post
 import urllib.request
 import yt_dlp
 import glob
-from telegram import Update, Message
+from telegram import Update, Message, InputMediaPhoto
 from telegram.error import TimedOut
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
@@ -35,6 +35,7 @@ TARGET_SIZE_MB = 47
 
 SLIDESHOW_SECONDS_PER_IMAGE = 5
 SLIDESHOW_TARGET_DURATION = 20
+TG_MAX_MEDIA_CHUNK = 10
 
 for folder in os.listdir(os.path.abspath('downloads')):
     f_path = os.path.abspath(os.path.join('downloads', folder))
@@ -62,6 +63,51 @@ Loader.download_video_thumbnails = False
 Loader.download_pictures = True
 
 print(lang['sys_messages']['initialised'])
+
+pending_carousels = {}
+
+
+def chunk_list(items, size=TG_MAX_MEDIA_CHUNK):
+    return [items[i:i + size] for i in range(0, len(items), size)]
+
+
+def parse_image_sequence(text, max_index):
+    text = text.strip().lower()
+    if text == 'all':
+        return list(range(1, max_index + 1))
+
+    indices = []
+    for part in text.split(','):
+        part = part.strip()
+        if not part:
+            continue
+        if '-' in part:
+            try:
+                start, end = part.split('-')
+                start, end = int(start), int(end)
+                step = 1 if end >= start else -1
+                indices.extend(range(start, end + step, step))
+            except ValueError:
+                continue
+        else:
+            try:
+                indices.append(int(part))
+            except ValueError:
+                continue
+
+    return [i for i in indices if 1 <= i <= max_index]
+
+
+def get_sidecar_images(full_path):
+    def sidecar_index(filename):
+        match = re.search(r'_(\d+)\.jpg$', filename)
+        return int(match.group(1)) if match else 0
+
+    files = sorted(
+        (f for f in os.listdir(full_path) if f.endswith(('.jpg', '.jpeg', '.webp', '.png'))),
+        key=sidecar_index
+    )
+    return [os.path.join(full_path, f) for f in files]
 
 
 def probe_link(url):
@@ -275,64 +321,48 @@ def load_video(url, shortcode):
     return None, None, None
 
 
-def load_post(shortcode, img_index):
+def load_post(shortcode):
     post = Post.from_shortcode(Loader.context, shortcode)
     dir_target = os.path.join('downloads', shortcode)
     full_path = os.path.abspath(dir_target)
-    img_path = None
-    audio_path = None
 
     try:
         Loader.download_post(post, target=shortcode)
         print(lang['func']['load_post']['success'], shortcode)
 
+        if post.typename == 'GraphSidecar':
+            return 'carousel', get_sidecar_images(full_path)
+
         img_extensions = ('.jpg', '.jpeg', '.webp', '.png')
-
+        img_path = None
         for item in os.listdir(full_path):
-            item_path = os.path.join(full_path, item)
-
-            is_sidecar_match = post.typename == 'GraphSidecar' and any(
-                item.endswith(f"{img_index}{ext}") for ext in img_extensions)
-            is_single_match = post.typename != 'GraphSidecar' and any(item.endswith(ext) for ext in img_extensions)
-
-            if is_sidecar_match or is_single_match:
-                converted_path = os.path.join(full_path, f"standardized_{shortcode}_{img_index}.jpg")
-                success = convert_to_jpg(item_path, converted_path)
-                if success:
-                    img_path = converted_path
-                else:
-                    img_path = item_path
+            if item.endswith(img_extensions):
+                item_path = os.path.join(full_path, item)
+                converted_path = os.path.join(full_path, f"standardized_{shortcode}.jpg")
+                img_path = converted_path if convert_to_jpg(item_path, converted_path) else item_path
                 break
 
-        print(f"Attempting to extract audio for {shortcode}...")
+        audio_path = None
         url = f"https://www.instagram.com/p/{shortcode}/"
-
         ydl_opts = {
             'format': 'bestaudio/best',
             'outtmpl': os.path.join(full_path, f'{shortcode}_audio.%(ext)s'),
-            'postprocessors': [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '192',
-            }],
-            'quiet': True,
-            'no_warnings': True,
+            'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}],
+            'quiet': True, 'no_warnings': True,
         }
-
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 ydl.download([url])
                 audio_path = os.path.join(full_path, f"{shortcode}_audio.mp3")
-                print("Audio extracted successfully!")
         except Exception as e:
-            print(f"No audio found or failed to extract: {e}")
+            print(f"No audio found: {e}")
 
-        return img_path, audio_path
+        return 'single', (img_path, audio_path)
 
     except Exception as e:
         print(lang['func']['load_post']['fail'].format(e=e))
 
-    return img_path, audio_path
+    return None, None
 
 
 def combine_img_audio(img_path, audio_path, out_path):
@@ -433,6 +463,45 @@ def build_slideshow(images, audio_path, out_path):
     return os.path.abspath(out_path), None, None
 
 
+async def send_carousel_prompt(msg_obj, images, shortcode):
+    numbered = list(enumerate(images, start=1))
+    for chunk in chunk_list(numbered, TG_MAX_MEDIA_CHUNK):
+        media = [InputMediaPhoto(open(p, 'rb'), caption=str(i)) for i, p in chunk]
+        await msg_obj.reply_media_group(media)
+
+    prompt = await msg_obj.reply_text(
+        "reply to this message with sequence"
+    )
+    pending_carousels[prompt.message_id] = {
+        'paths': images,
+        'requester_id': msg_obj.from_user.id if msg_obj.from_user else None,
+    }
+
+
+async def handle_carousel_reply(msg_obj):
+    session = pending_carousels.get(msg_obj.reply_to_message.message_id)
+    if session is None:
+        return
+
+    if session['requester_id'] is not None:
+        if not msg_obj.from_user or msg_obj.from_user.id != session['requester_id']:
+            return  # because not the original sender
+
+    indices = parse_image_sequence(msg_obj.text or '', len(session['paths']))
+    if not indices:
+        await msg_obj.reply_text('wrong input')
+        return
+
+    chosen = [session['paths'][i - 1] for i in indices]
+
+    for chunk in chunk_list(chosen, 10):
+        media = [InputMediaPhoto(open(p, 'rb')) for p in chunk]
+        await msg_obj.reply_media_group(media)
+
+    shutil.rmtree(os.path.dirname(session['paths'][0]), ignore_errors=True)
+    del pending_carousels[msg_obj.reply_to_message.message_id]
+
+
 def generate_convo_response(user_input: str) -> str:
     normalized_input: str = user_input.lower()
 #   split_input = normalized_input.split(' ') # if i want exact word matching
@@ -469,28 +538,25 @@ def preprocess_link(user_input: str) -> (str, bool):
     if probe_link(link) == 'video':
         media_args = load_video(link, shortcode)
         return 'video', media_args
-
     elif probe_link(link) == 'photo':
         if '/p/' in link:
-            try:
-                img_index = re.findall(r'(\d+&)', link.split('/')[-1])[0]
-                img_index = img_index[:-1]
-            except IndexError:
-                img_index = 1
-            image_path, audio_path = load_post(shortcode, img_index)
-            if audio_path:
-                media_args = combine_img_audio(image_path, audio_path, out_path)
-
-                return 'video', media_args
-            else:
-                media_args = image_path, None, None
-                return 'post', media_args
+            kind, data = load_post(shortcode)
+            if kind == 'carousel':
+                return 'carousel', (data, shortcode)
+            elif kind == 'single':
+                image_path, audio_path = data
+                if audio_path:
+                    media_args = combine_img_audio(image_path, audio_path, out_path)
+                    return 'video', media_args
+                else:
+                    media_args = image_path, None, None
+                    return 'post', media_args
+            return None, media_args
         else:
             images, audio_path = load_tiktok_post(link, shortcode)
             if images is None:
                 print("Download failed.")
                 return None, media_args
-            #out_path = os.path.join('downloads', shortcode, f"{shortcode}.mp4")
             media_args = build_slideshow(images, audio_path, out_path)
             return 'video', media_args
 
@@ -501,14 +567,15 @@ async def process_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg_obj = update.message or update.channel_post
     if msg_obj is None:
         return
+    if msg_obj.reply_to_message and msg_obj.reply_to_message.message_id in pending_carousels:
+        await handle_carousel_reply(msg_obj)
+        return
 
-    chat_type: str = msg_obj.chat.type ##here lies the possibility of message edit spy
+    chat_type: str = msg_obj.chat.type
     text: str = msg_obj.text
     content_type = ''
     content_attributes = (None, None, None)
     msg: Message | None = None
-
-    #print(f'User ({update.message.chat.id}) in {chat_type}: "{text}"')
 
     if chat_type in ('supergroup', 'group', 'channel'):
         if text and ('.instagram.' in text or '.tiktok.' in text):
@@ -516,7 +583,6 @@ async def process_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             content_type, content_attributes = preprocess_link(text)
         elif text and any(word in text.lower() for word in lang['func']['msg_process']['alias']):
             response: str = generate_convo_response(text)
-            #print('Bot response:', response)
             await msg_obj.reply_text(response)
             return
         else:
@@ -525,15 +591,23 @@ async def process_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await msg_obj.reply_text(lang['func']['msg_process']['error']['group'])
         return
 
+    if content_type == 'carousel':
+        images, shortcode = content_attributes
+        await send_carousel_prompt(msg_obj, images, shortcode)
+        if msg:
+            try:
+                await msg.delete()
+            except TimedOut:
+                await msg.delete(read_timeout=5)
+        return
+
     content_path = content_attributes[0] if content_attributes else None
     if content_type and content_path:
-        print(content_type)
-        print(content_path)
         content_width, content_height = content_attributes[1], content_attributes[2]
         try:
             if content_type == 'video':
                 await msg_obj.reply_video(content_path, width=content_width,
-                                                 height=content_height, read_timeout=60, write_timeout=60)
+                                          height=content_height, read_timeout=60, write_timeout=60)
             elif content_type == 'post':
                 await msg_obj.reply_photo(content_path, read_timeout=30, write_timeout=30)
         except Exception as e:
