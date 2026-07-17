@@ -1,3 +1,4 @@
+import asyncio
 import traceback
 from typing import Final
 import os
@@ -515,7 +516,11 @@ async def send_carousel_prompt(msg_obj, images, shortcode, context):
         sent_messages = await context.bot.send_media_group(chat_id=msg_obj.chat.id, media=media, read_timeout=30,
                                                            write_timeout=30)
         preview_message_ids.extend(m.message_id for m in sent_messages)
-    prompt = await msg_obj.reply_text("reply with sequence")
+    prompt = await msg_obj.reply_text("reply with sequence",
+                                      read_timeout=60,
+                                      write_timeout=60,
+                                      connect_timeout=15
+                                      )
     pending_carousels[prompt.message_id] = {
         'paths': images,
         'requester_id': msg_obj.from_user.id if msg_obj.from_user else None,
@@ -632,7 +637,12 @@ async def process_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if text and ('.instagram.' in text or '.tiktok.' in text):
             msg = await msg_obj.reply_text(lang['func']['msg_process']['wait'])
             try:
-                content_type, content_attributes = preprocess_link(text)
+                loop = asyncio.get_running_loop()
+                content_type, content_attributes = await loop.run_in_executor(
+                    None,
+                    preprocess_link,
+                    text
+                )
             except Exception as e:
                 print(f'preprocess_link crashed: {e}')
                 content_type, content_attributes = None, (None, None, None)
