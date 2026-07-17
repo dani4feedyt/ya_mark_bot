@@ -1,3 +1,4 @@
+import traceback
 from typing import Final
 import os
 import re
@@ -25,6 +26,7 @@ print(lang['sys_messages']['initialisation'])
 load_dotenv()
 API_TOKEN: Final = os.getenv('API_TOKEN')
 BOT_HANDLE: Final = os.getenv('BOT_HANDLE')
+STAGING_CHAT_ID: Final = os.getenv('STAGING_CHAT_ID')
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 MAX_DURATION_SECONDS = 600
@@ -54,6 +56,14 @@ async def assist_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def personalize_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(lang['func']['personalize'])
+
+
+def err_lang(template, **kwargs):
+    try:
+        return template.format(**kwargs)
+    except Exception:
+        return ' '.join(f'{k}={v}' for k, v in kwargs.items())
+
 
 Loader = instaloader.Instaloader(dirname_pattern='downloads/{target}')
 Loader.save_metadata = False
@@ -98,16 +108,25 @@ def parse_image_sequence(text, max_index):
     return [i for i in indices if 1 <= i <= max_index]
 
 
-def get_sidecar_images(full_path):
+def get_sidecar_images(full_path, shortcode):
     def sidecar_index(filename):
-        match = re.search(r'_(\d+)\.jpg$', filename)
+        match = re.search(r'_(\d+)\.\w+$', filename)
         return int(match.group(1)) if match else 0
-
+    img_extensions = ('.jpg', '.jpeg', '.webp', '.png')
     files = sorted(
-        (f for f in os.listdir(full_path) if f.endswith(('.jpg', '.jpeg', '.webp', '.png'))),
+        (f for f in os.listdir(full_path) if f.endswith(img_extensions)),
         key=sidecar_index
     )
-    return [os.path.join(full_path, f) for f in files]
+    converted_paths = []
+    for f in files:
+        idx = sidecar_index(f)
+        src_path = os.path.join(full_path, f)
+        if f.lower().endswith(('.jpg', '.jpeg')):
+            converted_paths.append(src_path)
+        else:
+            out_path = os.path.join(full_path, f"standardized_{shortcode}_{idx}.jpg")
+            converted_paths.append(out_path if convert_to_jpg(src_path, out_path) else src_path)
+    return converted_paths
 
 
 def probe_link(url):
@@ -316,7 +335,7 @@ def load_video(url, shortcode):
                     width, height = get_video_dimensions(video_path)
                     return video_path, width, height
         except Exception as e:
-            print(lang['func']['load_video']['fail'].format(e=e))
+            print(err_lang(lang['func']['load_video']['fail'], e=e))
 
     return None, None, None
 
@@ -331,7 +350,7 @@ def load_post(shortcode):
         print(lang['func']['load_post']['success'], shortcode)
 
         if post.typename == 'GraphSidecar':
-            return 'carousel', get_sidecar_images(full_path)
+            return 'carousel', get_sidecar_images(full_path, shortcode)
 
         img_extensions = ('.jpg', '.jpeg', '.webp', '.png')
         img_path = None
@@ -360,7 +379,7 @@ def load_post(shortcode):
         return 'single', (img_path, audio_path)
 
     except Exception as e:
-        print(lang['func']['load_post']['fail'].format(e=e))
+        print(err_lang(lang['func']['load_post']['fail'], e=e))
 
     return None, None
 
@@ -463,14 +482,27 @@ def build_slideshow(images, audio_path, out_path):
     return os.path.abspath(out_path), None, None
 
 
-async def send_carousel_prompt(msg_obj, images, shortcode):
-    preview_message_ids = []
-    numbered = list(enumerate(images, start=1))
-    for chunk in chunk_list(numbered, TG_MAX_MEDIA_CHUNK):
-        media = [InputMediaPhoto(open(p, 'rb'), caption=str(i)) for i, p in chunk]
-        sent_messages = await msg_obj.reply_media_group(media)
-        preview_message_ids.extend(m.message_id for m in sent_messages)
+async def upload_and_get_file_ids(images, context):
+    file_ids = []
+    for path in images:
+        with open(path, 'rb') as f:
+            temp_msg = await context.bot.send_photo(chat_id=STAGING_CHAT_ID, photo=f)
+        file_ids.append(temp_msg.photo[-1].file_id)
+        try:
+            await context.bot.delete_message(chat_id=STAGING_CHAT_ID, message_id=temp_msg.message_id)
+        except Exception as e:
+            print(f'Failed to delete staging message: {e}')
+    return file_ids
 
+
+async def send_carousel_prompt(msg_obj, images, shortcode, context):
+    file_ids = await upload_and_get_file_ids(images, context)
+    numbered = list(enumerate(file_ids, start=1))
+    preview_message_ids = []
+    for chunk in chunk_list(numbered, TG_MAX_MEDIA_CHUNK):
+        media = [InputMediaPhoto(fid, caption=str(i)) for i, fid in chunk]
+        sent_messages = await context.bot.send_media_group(chat_id=msg_obj.chat.id, media=media)
+        preview_message_ids.extend(m.message_id for m in sent_messages)
     prompt = await msg_obj.reply_text(
         "reply with sequence"
     )
@@ -486,23 +518,20 @@ async def handle_carousel_reply(msg_obj, context: ContextTypes.DEFAULT_TYPE):
     session = pending_carousels.get(msg_obj.reply_to_message.message_id)
     if session is None:
         return
-
     if session['requester_id'] is not None:
         if not msg_obj.from_user or msg_obj.from_user.id != session['requester_id']:
             return
-
     indices = parse_image_sequence(msg_obj.text or '', len(session['paths']))
     if not indices:
         await msg_obj.reply_text('wrong input')
         return
-
     chosen = [session['paths'][i - 1] for i in indices]
-
-    for chunk in chunk_list(chosen, TG_MAX_MEDIA_CHUNK):
-        media = [InputMediaPhoto(open(p, 'rb')) for p in chunk]
-        await msg_obj.reply_media_group(media)
-
+    file_ids = await upload_and_get_file_ids(chosen, context)
     chat_id = session['chat_id']
+    for chunk in chunk_list(file_ids, TG_MAX_MEDIA_CHUNK):
+        media = [InputMediaPhoto(fid) for fid in chunk]
+        await context.bot.send_media_group(chat_id=chat_id, media=media)
+
     for message_id in session['preview_message_ids']:
         try:
             await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
@@ -591,7 +620,11 @@ async def process_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if chat_type in ('supergroup', 'group', 'channel'):
         if text and ('.instagram.' in text or '.tiktok.' in text):
             msg = await msg_obj.reply_text(lang['func']['msg_process']['wait'])
-            content_type, content_attributes = preprocess_link(text)
+            try:
+                content_type, content_attributes = preprocess_link(text)
+            except Exception as e:
+                print(f'preprocess_link crashed: {e}')
+                content_type, content_attributes = None, (None, None, None)
         elif text and any(word in text.lower() for word in lang['func']['msg_process']['alias']):
             response: str = generate_convo_response(text)
             await msg_obj.reply_text(response)
@@ -604,7 +637,7 @@ async def process_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if content_type == 'carousel':
         images, shortcode = content_attributes
-        await send_carousel_prompt(msg_obj, images, shortcode)
+        await send_carousel_prompt(msg_obj, images, shortcode, context)
         if msg:
             try:
                 await msg.delete()
@@ -622,7 +655,7 @@ async def process_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             elif content_type == 'post':
                 await msg_obj.reply_photo(content_path, read_timeout=30, write_timeout=30)
         except Exception as e:
-            print(lang['func']['msg_process']['error']['timeout'].format(e=e))
+            print(err_lang(lang['func']['msg_process']['error']['timeout'], e=e))
         finally:
             shutil.rmtree(os.path.dirname(content_path), ignore_errors=True)
             if msg:
@@ -639,9 +672,9 @@ async def process_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await msg.delete(read_timeout=5)
 
 
-# Log errors
 async def log_error(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print(f'Update {update} caused error {context.error}')
+    traceback.print_exception(type(context.error), context.error, context.error.__traceback__)
 
 
 # Start the bot
