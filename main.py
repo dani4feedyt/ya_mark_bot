@@ -483,29 +483,38 @@ def build_slideshow(images, audio_path, out_path):
 
 
 async def upload_and_get_file_ids(images, context):
-    file_ids = []
-    for path in images:
-        with open(path, 'rb') as f:
-            temp_msg = await context.bot.send_photo(chat_id=STAGING_CHAT_ID, photo=f)
-        file_ids.append(temp_msg.photo[-1].file_id)
+    results = []
+    for idx, path in enumerate(images, start=1):
+        try:
+            with open(path, 'rb') as f:
+                temp_msg = await context.bot.send_photo(
+                    chat_id=STAGING_CHAT_ID, photo=f,
+                    read_timeout=30, write_timeout=30, connect_timeout=15,
+                )
+        except Exception as e:
+            print(f'Staging upload failed for image {idx} ({path}): {e}')
+            continue
+
+        results.append((idx, temp_msg.photo[-1].file_id))
         try:
             await context.bot.delete_message(chat_id=STAGING_CHAT_ID, message_id=temp_msg.message_id)
         except Exception as e:
             print(f'Failed to delete staging message: {e}')
-    return file_ids
+
+    return results
 
 
 async def send_carousel_prompt(msg_obj, images, shortcode, context):
-    file_ids = await upload_and_get_file_ids(images, context)
-    numbered = list(enumerate(file_ids, start=1))
+    results = await upload_and_get_file_ids(images, context)
+    if not results:
+        await msg_obj.reply_text('Failed to prepare the carousel preview')
+        return
     preview_message_ids = []
-    for chunk in chunk_list(numbered, TG_MAX_MEDIA_CHUNK):
-        media = [InputMediaPhoto(fid, caption=str(i)) for i, fid in chunk]
+    for chunk in chunk_list(results, TG_MAX_MEDIA_CHUNK):
+        media = [InputMediaPhoto(fid, caption=str(idx)) for idx, fid in chunk]
         sent_messages = await context.bot.send_media_group(chat_id=msg_obj.chat.id, media=media)
         preview_message_ids.extend(m.message_id for m in sent_messages)
-    prompt = await msg_obj.reply_text(
-        "reply with sequence"
-    )
+    prompt = await msg_obj.reply_text("reply with sequence")
     pending_carousels[prompt.message_id] = {
         'paths': images,
         'requester_id': msg_obj.from_user.id if msg_obj.from_user else None,
@@ -526,7 +535,8 @@ async def handle_carousel_reply(msg_obj, context: ContextTypes.DEFAULT_TYPE):
         await msg_obj.reply_text('wrong input')
         return
     chosen = [session['paths'][i - 1] for i in indices]
-    file_ids = await upload_and_get_file_ids(chosen, context)
+    results = await upload_and_get_file_ids(chosen, context)
+    file_ids = [fid for _, fid in results]
     chat_id = session['chat_id']
     for chunk in chunk_list(file_ids, TG_MAX_MEDIA_CHUNK):
         media = [InputMediaPhoto(fid) for fid in chunk]
