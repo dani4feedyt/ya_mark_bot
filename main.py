@@ -32,6 +32,7 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 MAX_DURATION_SECONDS = 600
 COMPRESS_THRESHOLD_SECONDS = 120
+CAROUSEL_TIMEOUT_SECONDS = 300
 MAX_FILESIZE_BYTES = 300 * 1024 * 1024
 MAX_VIDEO_MB = 50
 TARGET_SIZE_MB = 47
@@ -505,6 +506,42 @@ async def upload_and_get_file_ids(images, context):
     return results
 
 
+async def finalize_carousel_selection(prompt_message_id, chosen_paths, context, delete_prompt):
+    session = pending_carousels.pop(prompt_message_id, None)
+    if session is None:
+        return
+
+    chat_id = session['chat_id']
+    results = await upload_and_get_file_ids(chosen_paths, context)
+    file_ids = [fid for _, fid in results]
+
+    for chunk in chunk_list(file_ids, TG_MAX_MEDIA_CHUNK):
+        media = [InputMediaPhoto(fid) for fid in chunk]
+        await context.bot.send_media_group(chat_id=chat_id, media=media)
+
+    for message_id in session['preview_message_ids']:
+        try:
+            await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
+        except Exception as e:
+            print(err_lang(lang['func']['load_carousel']['reply']['fail'], e=e))
+
+    if delete_prompt:
+        try:
+            await context.bot.delete_message(chat_id=chat_id, message_id=prompt_message_id)
+        except Exception as e:
+            print(err_lang(lang['func']['load_carousel']['reply']['fail'], e=e))
+
+    shutil.rmtree(os.path.dirname(session['paths'][0]), ignore_errors=True)
+
+
+async def handle_carousel_timeout(context: ContextTypes.DEFAULT_TYPE):
+    prompt_message_id = context.job.data
+    session = pending_carousels.get(prompt_message_id)
+    if session is None:
+        return
+    await finalize_carousel_selection(prompt_message_id, session['paths'], context, delete_prompt=True)
+
+
 async def send_carousel_prompt(msg_obj, images, shortcode, context):
     results = await upload_and_get_file_ids(images, context)
     if not results:
@@ -521,16 +558,23 @@ async def send_carousel_prompt(msg_obj, images, shortcode, context):
                                       write_timeout=60,
                                       connect_timeout=15
                                       )
+    job = context.job_queue.run_once(
+        handle_carousel_timeout,
+        when=CAROUSEL_TIMEOUT_SECONDS,
+        data=prompt.message_id,
+    )
     pending_carousels[prompt.message_id] = {
         'paths': images,
         'requester_id': msg_obj.from_user.id if msg_obj.from_user else None,
         'chat_id': msg_obj.chat.id,
-        'preview_message_ids': preview_message_ids
+        'preview_message_ids': preview_message_ids,
+        'timeout_job': job,
     }
 
 
 async def handle_carousel_reply(msg_obj, context: ContextTypes.DEFAULT_TYPE):
-    session = pending_carousels.get(msg_obj.reply_to_message.message_id)
+    prompt_message_id = msg_obj.reply_to_message.message_id
+    session = pending_carousels.get(prompt_message_id)
     if session is None:
         return
     if session['requester_id'] is not None:
@@ -540,22 +584,11 @@ async def handle_carousel_reply(msg_obj, context: ContextTypes.DEFAULT_TYPE):
     if not indices:
         await msg_obj.reply_text(lang['func']['load_carousel']['reply']['invalid'])
         return
+    job = session.get('timeout_job')
+    if job:
+        job.schedule_removal()
     chosen = [session['paths'][i - 1] for i in indices]
-    results = await upload_and_get_file_ids(chosen, context)
-    file_ids = [fid for _, fid in results]
-    chat_id = session['chat_id']
-    for chunk in chunk_list(file_ids, TG_MAX_MEDIA_CHUNK):
-        media = [InputMediaPhoto(fid) for fid in chunk]
-        await context.bot.send_media_group(chat_id=chat_id, media=media)
-
-    for message_id in session['preview_message_ids']:
-        try:
-            await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
-        except Exception as e:
-            print(err_lang(lang['func']['load_carousel']['reply']['fail'], e=e))
-
-    shutil.rmtree(os.path.dirname(session['paths'][0]), ignore_errors=True)
-    del pending_carousels[msg_obj.reply_to_message.message_id]
+    await finalize_carousel_selection(prompt_message_id, chosen, context, delete_prompt=False)
 
 
 def generate_convo_response(user_input: str) -> str:
