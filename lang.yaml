@@ -54,6 +54,18 @@ func:
       Successfully downloaded the post!
     fail: >
       Failed to download the post: {e}
+  load_carousel:
+    prompt:
+      fail: >
+        Failed to download the carousel: {e}
+      query: | 
+        Multiple images detected, choose desired one(s) from the preview. 
+        Reply to this message with sequence (e.g. "1, 2, 5" or "1-4" or "all")
+    reply:
+      invalid:
+        Error. Invalid sequence.
+      fail: >
+        Failed to delete the preview: {e}
   convo:
     default:
       - have you called me?
@@ -68,7 +80,7 @@ func:
       - 马克
       - マク
     wait:
-      Please wait, reel is being downloaded...
+      Please wait, media is being downloaded...
     error:
       no_content:
         Error, invalid link...

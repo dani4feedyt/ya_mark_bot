@@ -508,7 +508,7 @@ async def upload_and_get_file_ids(images, context):
 async def send_carousel_prompt(msg_obj, images, shortcode, context):
     results = await upload_and_get_file_ids(images, context)
     if not results:
-        await msg_obj.reply_text('Failed to prepare the carousel preview')
+        await msg_obj.reply_text(lang['func']['load_carousel']['prompt']['fail'])
         return
     preview_message_ids = []
     for chunk in chunk_list(results, TG_MAX_MEDIA_CHUNK):
@@ -516,7 +516,7 @@ async def send_carousel_prompt(msg_obj, images, shortcode, context):
         sent_messages = await context.bot.send_media_group(chat_id=msg_obj.chat.id, media=media, read_timeout=30,
                                                            write_timeout=30)
         preview_message_ids.extend(m.message_id for m in sent_messages)
-    prompt = await msg_obj.reply_text("reply with sequence",
+    prompt = await msg_obj.reply_text(lang['func']['load_carousel']['prompt']['query'],
                                       read_timeout=60,
                                       write_timeout=60,
                                       connect_timeout=15
@@ -538,7 +538,7 @@ async def handle_carousel_reply(msg_obj, context: ContextTypes.DEFAULT_TYPE):
             return
     indices = parse_image_sequence(msg_obj.text or '', len(session['paths']))
     if not indices:
-        await msg_obj.reply_text('wrong input')
+        await msg_obj.reply_text(lang['func']['load_carousel']['reply']['invalid'])
         return
     chosen = [session['paths'][i - 1] for i in indices]
     results = await upload_and_get_file_ids(chosen, context)
@@ -552,7 +552,7 @@ async def handle_carousel_reply(msg_obj, context: ContextTypes.DEFAULT_TYPE):
         try:
             await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
         except Exception as e:
-            print(f'Failed to delete preview: {e}')
+            print(err_lang(lang['func']['load_carousel']['reply']['fail'], e=e))
 
     shutil.rmtree(os.path.dirname(session['paths'][0]), ignore_errors=True)
     del pending_carousels[msg_obj.reply_to_message.message_id]
