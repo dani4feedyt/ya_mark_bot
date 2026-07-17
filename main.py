@@ -489,7 +489,7 @@ async def upload_and_get_file_ids(images, context):
             with open(path, 'rb') as f:
                 temp_msg = await context.bot.send_photo(
                     chat_id=STAGING_CHAT_ID, photo=f,
-                    read_timeout=30, write_timeout=30, connect_timeout=15,
+                    read_timeout=60, write_timeout=60, connect_timeout=15,
                 )
         except Exception as e:
             print(f'Staging upload failed for image {idx} ({path}): {e}')
@@ -512,7 +512,8 @@ async def send_carousel_prompt(msg_obj, images, shortcode, context):
     preview_message_ids = []
     for chunk in chunk_list(results, TG_MAX_MEDIA_CHUNK):
         media = [InputMediaPhoto(fid, caption=str(idx)) for idx, fid in chunk]
-        sent_messages = await context.bot.send_media_group(chat_id=msg_obj.chat.id, media=media)
+        sent_messages = await context.bot.send_media_group(chat_id=msg_obj.chat.id, media=media, read_timeout=30,
+                                                           write_timeout=30)
         preview_message_ids.extend(m.message_id for m in sent_messages)
     prompt = await msg_obj.reply_text("reply with sequence")
     pending_carousels[prompt.message_id] = {
