@@ -581,6 +581,12 @@ async def finalize_carousel_selection(prompt_message_id, chosen_paths, context, 
 
     chat_id = session['chat_id']
     if len(chosen_paths) == len(session['paths']):
+        for message_id in session['preview_message_ids']:
+            try:
+                await context.bot.edit_message_caption(chat_id=chat_id, message_id=message_id, caption='')
+            except Exception as e:
+                print(f'Failed to clear caption for {message_id}: {e}')
+            await asyncio.sleep(0.1)
         try:
             await context.bot.delete_message(chat_id=chat_id, message_id=prompt_message_id)
         except Exception as e:
