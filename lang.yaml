@@ -60,7 +60,8 @@ func:
         Failed to download the carousel: {e}
       query: | 
         Multiple images detected, choose desired one(s) from the preview. 
-        Reply to this message with sequence (e.g. "1, 2, 5" or "1-4" or "all")
+        Reply to this message with sequence (e.g. "1, 2, 5" or "1-4")
+        If you want to send the entire batch, just ignore this message.
     reply:
       invalid:
         Error. Invalid sequence.
