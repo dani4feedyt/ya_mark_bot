@@ -432,7 +432,15 @@ def combine_img_audio(img_path, audio_path, out_path):
     if result.returncode != 0:
         print(f"FFmpeg Error:\n{result.stderr}")
         return None, None, None
-    return os.path.abspath(out_path), None, None
+
+    duration = get_duration(out_path) or 0
+    out_path, fits = ensure_fits(out_path, duration)
+    if not fits:
+        print('failed to fit')
+        return None, None, None
+
+    width, height = get_video_dimensions(out_path)
+    return os.path.abspath(out_path), width, height
 
 
 def load_tiktok_post(url, shortcode):
@@ -504,7 +512,14 @@ def build_slideshow(images, audio_path, out_path):
     if os.path.exists(concat_list):
         os.remove(concat_list)
 
-    return os.path.abspath(out_path), None, None
+    duration = get_duration(out_path) or target_duration
+    out_path, fits = ensure_fits(out_path, duration)
+    if not fits:
+        print('failed to fit')
+        return None, None, None
+
+    width, height = get_video_dimensions(out_path)
+    return os.path.abspath(out_path), width, height
 
 
 async def upload_and_get_file_ids(images, context):
