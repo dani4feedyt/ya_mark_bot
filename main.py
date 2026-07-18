@@ -623,11 +623,11 @@ def preprocess_link(user_input: str) -> (str, bool):
     shortcode = clean_link.split('/')[-1]
     out_path = os.path.join('downloads', shortcode, f"{shortcode}.mp4")
     print("shortcode:" + shortcode)
-
-    if probe_link(link) == 'video':
+    link_kind = probe_link(link)
+    if link_kind == 'video':
         media_args = load_video(link, shortcode)
         return 'video', media_args
-    elif probe_link(link) == 'photo':
+    elif link_kind == 'photo':
         if '/p/' in link:
             kind, data = load_post(shortcode)
             if kind == 'carousel':
