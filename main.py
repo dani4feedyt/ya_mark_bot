@@ -155,7 +155,21 @@ def get_sidecar_media(full_path, shortcode):
         idx = sidecar_index(f)
         src_path = os.path.join(full_path, f)
         if f.endswith(VIDEO_EXTENSIONS):
-            media.append((src_path, 'video'))
+            duration = get_duration(src_path)
+            if duration and duration > MAX_DURATION_SECONDS:
+                print(f'sidecar video {f} too long, skipping')
+                continue
+
+            video_path = src_path
+            size_mb = os.path.getsize(video_path) / (1024 * 1024)
+            if size_mb > MAX_VIDEO_MB:
+                print('exceeds 50 mb, shrinking')
+                video_path, fits = ensure_fits(video_path, duration or 60)
+                if not fits:
+                    print('failed to fit')
+                    continue
+
+            media.append((video_path, 'video'))
         else:
             media.append((ensure_jpg(src_path, shortcode, idx), 'photo'))
     return media
