@@ -574,7 +574,7 @@ async def upload_and_get_file_ids(images, context):
     return results
 
 
-async def finalize_carousel_selection(prompt_message_id, chosen_paths, context, delete_prompt):
+async def finalize_carousel_selection(prompt_message_id, chosen_paths, context, delete_prompt, reply_message_id=None):
     session = pending_carousels.pop(prompt_message_id, None)
     if session is None:
         return
@@ -585,6 +585,11 @@ async def finalize_carousel_selection(prompt_message_id, chosen_paths, context, 
             await context.bot.delete_message(chat_id=chat_id, message_id=prompt_message_id)
         except Exception as e:
             print(err_lang(lang['func']['load_carousel']['reply']['fail'], e=e))
+        if reply_message_id is not None:
+            try:
+                await context.bot.delete_message(chat_id=chat_id, message_id=reply_message_id)
+            except Exception as e:
+                print(err_lang(lang['func']['load_carousel']['reply']['fail'], e=e))
         shutil.rmtree(os.path.dirname(session['paths'][0]), ignore_errors=True)
         return
 
@@ -670,7 +675,10 @@ async def handle_carousel_reply(msg_obj, context: ContextTypes.DEFAULT_TYPE):
     if job:
         job.schedule_removal()
     chosen = [session['paths'][i - 1] for i in indices]
-    await finalize_carousel_selection(prompt_message_id, chosen, context, delete_prompt=False)
+    await finalize_carousel_selection(
+        prompt_message_id, chosen, context,
+        delete_prompt=False, reply_message_id=msg_obj.message_id,
+    )
 
 
 def generate_convo_response(user_input: str) -> str:
