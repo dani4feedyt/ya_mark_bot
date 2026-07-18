@@ -99,7 +99,6 @@ def parse_image_sequence(text, max_index):
     text = text.strip().lower()
     if text == 'all':
         return list(range(1, max_index + 1))
-
     indices = []
     for part in text.split(','):
         part = part.strip()
@@ -109,17 +108,26 @@ def parse_image_sequence(text, max_index):
             try:
                 start, end = part.split('-')
                 start, end = int(start), int(end)
-                step = 1 if end >= start else -1
-                indices.extend(range(start, end + step, step))
             except ValueError:
                 continue
+            start = max(1, min(start, max_index))
+            end = max(1, min(end, max_index))
+            step = 1 if end >= start else -1
+            indices.extend(range(start, end + step, step))
         else:
             try:
-                indices.append(int(part))
+                idx = int(part)
             except ValueError:
                 continue
-
-    return [i for i in indices if 1 <= i <= max_index]
+            if 1 <= idx <= max_index:
+                indices.append(idx)
+    seen = set()
+    result = []
+    for i in indices:
+        if i not in seen:
+            seen.add(i)
+            result.append(i)
+    return result
 
 
 def ensure_jpg(src_path, shortcode, idx=None):
