@@ -360,8 +360,25 @@ def load_post(shortcode):
 
         if post.typename == 'GraphSidecar':
             return 'carousel', get_sidecar_images(full_path, shortcode)
+
         if post.typename == 'GraphVideo':
-            return 'video', None
+            video_path = None
+            for item in os.listdir(full_path):
+                if item.endswith('.mp4'):
+                    video_path = os.path.join(full_path, item)
+                    break
+            if video_path is None:
+                print('no .mp4 found after download')
+                return None, None
+
+            duration = get_duration(video_path) or 0
+            video_path, fits = ensure_fits(video_path, duration)
+            if not fits:
+                print('failed to fit')
+                return None, None
+
+            width, height = get_video_dimensions(video_path)
+            return 'video', (video_path, width, height)
 
         img_path = None
         for item in os.listdir(full_path):
@@ -613,7 +630,7 @@ def generate_convo_response(user_input: str) -> str:
     return random.choice(lang['func']['convo']['default'])
 
 
-def preprocess_link(user_input: str) -> (str, bool):
+def preprocess_link(user_input: str):
     message_parts = user_input.split(' ')
     link = ''
     media_args = []
@@ -629,15 +646,20 @@ def preprocess_link(user_input: str) -> (str, bool):
     shortcode = clean_link.split('/')[-1]
     out_path = os.path.join('downloads', shortcode, f"{shortcode}.mp4")
     print("shortcode:" + shortcode)
+
     link_kind = probe_link(link)
+
     if link_kind == 'video':
         media_args = load_video(link, shortcode)
         return 'video', media_args
+
     elif link_kind == 'photo':
         if '/p/' in link:
             kind, data = load_post(shortcode)
             if kind == 'carousel':
                 return 'carousel', (data, shortcode)
+            elif kind == 'video':
+                return 'video', data
             elif kind == 'single':
                 image_path, audio_path = data
                 if audio_path:
