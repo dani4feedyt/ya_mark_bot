@@ -593,7 +593,7 @@ async def upload_and_get_file_ids(media_items, context):
     return results
 
 
-async def finalize_carousel_selection(prompt_message_id, chosen_paths, context, delete_prompt, reply_message_id=None):
+async def finalize_carousel_selection(prompt_message_id, chosen_paths, context, reply_message_id=None):
     session = pending_carousels.pop(prompt_message_id, None)
     if session is None:
         return
@@ -606,43 +606,37 @@ async def finalize_carousel_selection(prompt_message_id, chosen_paths, context, 
             except Exception as e:
                 print(f'Failed to clear caption for {message_id}: {e}')
             await asyncio.sleep(0.1)
-        try:
-            await context.bot.delete_message(chat_id=chat_id, message_id=prompt_message_id)
-        except Exception as e:
-            print(err_lang(lang['func']['load_carousel']['reply']['fail'], e=e))
-        if reply_message_id is not None:
+    else:
+        results = await upload_and_get_file_ids(chosen_paths, context)
+        sent_count = 0
+
+        for chunk in chunk_list(results, TG_MAX_MEDIA_CHUNK):
+            media = [
+                InputMediaVideo(fid) if kind == 'video' else InputMediaPhoto(fid)
+                for idx, fid, kind in chunk
+            ]
             try:
-                await context.bot.delete_message(chat_id=chat_id, message_id=reply_message_id)
+                await context.bot.send_media_group(
+                    chat_id=chat_id, media=media,
+                    read_timeout=60, write_timeout=60, connect_timeout=15,
+                )
+                sent_count += len(chunk)
+            except Exception as e:
+                print(f'send_media_group failed for a chunk: {e}')
+        for message_id in session['preview_message_ids']:
+            try:
+                await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
             except Exception as e:
                 print(err_lang(lang['func']['load_carousel']['reply']['fail'], e=e))
-        shutil.rmtree(os.path.dirname(session['paths'][0][0]), ignore_errors=True)
-        return
 
-    results = await upload_and_get_file_ids(chosen_paths, context)
-    sent_count = 0
+    try:
+        await context.bot.delete_message(chat_id=chat_id, message_id=prompt_message_id)
+    except Exception as e:
+        print(err_lang(lang['func']['load_carousel']['reply']['fail'], e=e))
 
-    for chunk in chunk_list(results, TG_MAX_MEDIA_CHUNK):
-        media = [
-            InputMediaVideo(fid) if kind == 'video' else InputMediaPhoto(fid)
-            for idx, fid, kind in chunk
-        ]
+    if reply_message_id is not None:
         try:
-            await context.bot.send_media_group(
-                chat_id=chat_id, media=media,
-                read_timeout=60, write_timeout=60, connect_timeout=15,
-            )
-            sent_count += len(chunk)
-        except Exception as e:
-            print(f'send_media_group failed for a chunk: {e}')
-    for message_id in session['preview_message_ids']:
-        try:
-            await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
-        except Exception as e:
-            print(err_lang(lang['func']['load_carousel']['reply']['fail'], e=e))
-
-    if delete_prompt:
-        try:
-            await context.bot.delete_message(chat_id=chat_id, message_id=prompt_message_id)
+            await context.bot.delete_message(chat_id=chat_id, message_id=reply_message_id)
         except Exception as e:
             print(err_lang(lang['func']['load_carousel']['reply']['fail'], e=e))
 
@@ -654,7 +648,7 @@ async def handle_carousel_timeout(context: ContextTypes.DEFAULT_TYPE):
     session = pending_carousels.get(prompt_message_id)
     if session is None:
         return
-    await finalize_carousel_selection(prompt_message_id, session['paths'], context, delete_prompt=True)
+    await finalize_carousel_selection(prompt_message_id, session['paths'], context)
 
 
 async def send_carousel_prompt(msg_obj, media_items, shortcode, context):
@@ -703,7 +697,7 @@ async def handle_carousel_reply(msg_obj, context: ContextTypes.DEFAULT_TYPE):
     chosen = [session['paths'][i - 1] for i in indices]
     await finalize_carousel_selection(
         prompt_message_id, chosen, context,
-        delete_prompt=False, reply_message_id=msg_obj.message_id,
+        reply_message_id=msg_obj.message_id,
     )
 
 
