@@ -560,11 +560,29 @@ async def finalize_carousel_selection(prompt_message_id, chosen_paths, context, 
     chat_id = session['chat_id']
     results = await upload_and_get_file_ids(chosen_paths, context)
     file_ids = [fid for _, fid in results]
-
+    sent_count = 0
+    send_failed = False
     for chunk in chunk_list(file_ids, TG_MAX_MEDIA_CHUNK):
         media = [InputMediaPhoto(fid) for fid in chunk]
-        await context.bot.send_media_group(chat_id=chat_id, media=media)
-
+        try:
+            await context.bot.send_media_group(
+                chat_id=chat_id, media=media,
+                read_timeout=60, write_timeout=60, connect_timeout=15,
+            )
+            sent_count += len(chunk)
+        except Exception as e:
+            print(f'send_media_group failed for a chunk: {e}')
+            send_failed = True
+    if not file_ids or send_failed:
+        note = (
+            f"Sent {sent_count}/{len(chosen_paths)} images, some failed to send."
+            if sent_count else
+            "Failed to send images."
+        )
+        try:
+            await context.bot.send_message(chat_id=chat_id, text=note)
+        except Exception as e:
+            print(f'failed to notify user of send failure: {e}')
     for message_id in session['preview_message_ids']:
         try:
             await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
