@@ -641,6 +641,7 @@ async def send_carousel_prompt(msg_obj, images, shortcode, context):
                                                            write_timeout=30)
         preview_message_ids.extend(m.message_id for m in sent_messages)
     prompt = await msg_obj.reply_text(lang['func']['load_carousel']['prompt']['query'],
+                                      parse_mode='HTML',  # important for Italic
                                       read_timeout=60,
                                       write_timeout=60,
                                       connect_timeout=15
