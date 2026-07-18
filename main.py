@@ -581,11 +581,10 @@ async def finalize_carousel_selection(prompt_message_id, chosen_paths, context, 
 
     chat_id = session['chat_id']
     if len(chosen_paths) == len(session['paths']):
-        if delete_prompt:
-            try:
-                await context.bot.delete_message(chat_id=chat_id, message_id=prompt_message_id)
-            except Exception as e:
-                print(err_lang(lang['func']['load_carousel']['reply']['fail'], e=e))
+        try:
+            await context.bot.delete_message(chat_id=chat_id, message_id=prompt_message_id)
+        except Exception as e:
+            print(err_lang(lang['func']['load_carousel']['reply']['fail'], e=e))
         shutil.rmtree(os.path.dirname(session['paths'][0]), ignore_errors=True)
         return
 
