@@ -29,6 +29,7 @@ API_TOKEN: Final = os.getenv('API_TOKEN')
 BOT_HANDLE: Final = os.getenv('BOT_HANDLE')
 STAGING_CHAT_ID: Final = os.getenv('STAGING_CHAT_ID')
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+IMG_EXTENSIONS = ('.jpg', '.jpeg', '.webp', '.png')
 
 MAX_DURATION_SECONDS = 600
 COMPRESS_THRESHOLD_SECONDS = 120
@@ -58,6 +59,17 @@ async def assist_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def personalize_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(lang['func']['personalize'])
+
+
+async def safe_delete(msg):
+    if msg is None:
+        return
+    try:
+        await msg.delete()
+    except TimedOut:
+        await msg.delete(read_timeout=5)
+    except Exception as e:
+        print(f'delete failed: {e}')
 
 
 def err_lang(template, **kwargs):
@@ -110,25 +122,20 @@ def parse_image_sequence(text, max_index):
     return [i for i in indices if 1 <= i <= max_index]
 
 
+def ensure_jpg(src_path, shortcode, idx=None):
+    if src_path.lower().endswith(('.jpg', '.jpeg')):
+        return src_path
+    suffix = f"_{idx}" if idx is not None else ""
+    out_path = os.path.join(os.path.dirname(src_path), f"standardized_{shortcode}{suffix}.jpg")
+    return out_path if convert_to_jpg(src_path, out_path) else src_path
+
+
 def get_sidecar_images(full_path, shortcode):
     def sidecar_index(filename):
         match = re.search(r'_(\d+)\.\w+$', filename)
         return int(match.group(1)) if match else 0
-    img_extensions = ('.jpg', '.jpeg', '.webp', '.png')
-    files = sorted(
-        (f for f in os.listdir(full_path) if f.endswith(img_extensions)),
-        key=sidecar_index
-    )
-    converted_paths = []
-    for f in files:
-        idx = sidecar_index(f)
-        src_path = os.path.join(full_path, f)
-        if f.lower().endswith(('.jpg', '.jpeg')):
-            converted_paths.append(src_path)
-        else:
-            out_path = os.path.join(full_path, f"standardized_{shortcode}_{idx}.jpg")
-            converted_paths.append(out_path if convert_to_jpg(src_path, out_path) else src_path)
-    return converted_paths
+    files = sorted((f for f in os.listdir(full_path) if f.endswith(IMG_EXTENSIONS)), key=sidecar_index)
+    return [ensure_jpg(os.path.join(full_path, f), shortcode, sidecar_index(f)) for f in files]
 
 
 def probe_link(url):
@@ -353,14 +360,13 @@ def load_post(shortcode):
 
         if post.typename == 'GraphSidecar':
             return 'carousel', get_sidecar_images(full_path, shortcode)
+        if post.typename == 'GraphVideo':
+            return 'video', None
 
-        img_extensions = ('.jpg', '.jpeg', '.webp', '.png')
         img_path = None
         for item in os.listdir(full_path):
-            if item.endswith(img_extensions):
-                item_path = os.path.join(full_path, item)
-                converted_path = os.path.join(full_path, f"standardized_{shortcode}.jpg")
-                img_path = converted_path if convert_to_jpg(item_path, converted_path) else item_path
+            if item.endswith(IMG_EXTENSIONS):
+                img_path = ensure_jpg(os.path.join(full_path, item), shortcode)
                 break
 
         audio_path = None
@@ -692,11 +698,7 @@ async def process_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if content_type == 'carousel':
         images, shortcode = content_attributes
         await send_carousel_prompt(msg_obj, images, shortcode, context)
-        if msg:
-            try:
-                await msg.delete()
-            except TimedOut:
-                await msg.delete(read_timeout=5)
+        await safe_delete(msg)
         return
 
     content_path = content_attributes[0] if content_attributes else None
@@ -712,18 +714,10 @@ async def process_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             print(err_lang(lang['func']['msg_process']['error']['timeout'], e=e))
         finally:
             shutil.rmtree(os.path.dirname(content_path), ignore_errors=True)
-            if msg:
-                try:
-                    await msg.delete()
-                except TimedOut:
-                    await msg.delete(read_timeout=5)
+            await safe_delete(msg)
     else:
         await msg_obj.reply_text(lang['func']['msg_process']['error']['no_content'])
-        if msg:
-            try:
-                await msg.delete()
-            except TimedOut:
-                await msg.delete(read_timeout=5)
+        await safe_delete(msg)
 
 
 async def log_error(update: Update, context: ContextTypes.DEFAULT_TYPE):
