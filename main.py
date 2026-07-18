@@ -16,7 +16,7 @@ import urllib.request
 import yt_dlp
 import glob
 from telegram import Update, Message, InputMediaPhoto
-from telegram.error import TimedOut
+from telegram.error import TimedOut, RetryAfter
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
 with open('lang.yaml', 'r', encoding='utf-8') as file:
@@ -530,24 +530,46 @@ def build_slideshow(images, audio_path, out_path):
     return os.path.abspath(out_path), width, height
 
 
-async def upload_and_get_file_ids(images, context):
-    results = []
-    for idx, path in enumerate(images, start=1):
+async def _send_staging_photo(path, idx, context, max_retries=3):
+    for attempt in range(max_retries):
         try:
             with open(path, 'rb') as f:
                 temp_msg = await context.bot.send_photo(
                     chat_id=STAGING_CHAT_ID, photo=f,
                     read_timeout=60, write_timeout=60, connect_timeout=15,
                 )
+            return temp_msg.photo[-1].file_id, temp_msg.message_id
+        except RetryAfter as e:
+            wait = e.retry_after + 0.5
+            print(f'Flood control on image {idx}, waiting')
+            await asyncio.sleep(wait)
+        except TimedOut:
+            print(f'Timeout on image {idx}, retrying')
+            await asyncio.sleep(1)
         except Exception as e:
-            print(f'Staging upload failed for image {idx} ({path}): {e}')
-            continue
+            print(f'Staging upload failed for image {idx}: {e}')
+            return None, None
 
-        results.append((idx, temp_msg.photo[-1].file_id))
+    return None, None
+
+
+async def upload_and_get_file_ids(images, context):
+    results = []
+    staging_message_ids = []
+
+    for idx, path in enumerate(images, start=1):
+        file_id, message_id = await _send_staging_photo(path, idx, context)
+        if file_id is not None:
+            results.append((idx, file_id))
+            staging_message_ids.append(message_id)
+        await asyncio.sleep(0.15)
+
+    for message_id in staging_message_ids:
         try:
-            await context.bot.delete_message(chat_id=STAGING_CHAT_ID, message_id=temp_msg.message_id)
+            await context.bot.delete_message(chat_id=STAGING_CHAT_ID, message_id=message_id)
         except Exception as e:
-            print(f'Failed to delete staging message: {e}')
+            print(f'Failed to delete staging message {message_id}: {e}')
+        await asyncio.sleep(0.1)
 
     return results
 
