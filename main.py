@@ -15,7 +15,8 @@ from instaloader import Post
 import urllib.request
 import yt_dlp
 import glob
-from telegram import Update, Message, InputMediaPhoto
+from telegram import Update, Message, InputMediaPhoto, InputMediaVideo
+from telegram.constants import ParseMode
 from telegram.error import TimedOut, RetryAfter
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
@@ -30,6 +31,7 @@ BOT_HANDLE: Final = os.getenv('BOT_HANDLE')
 STAGING_CHAT_ID: Final = os.getenv('STAGING_CHAT_ID')
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 IMG_EXTENSIONS = ('.jpg', '.jpeg', '.webp', '.png')
+VIDEO_EXTENSIONS = ('.mp4',)
 
 MAX_DURATION_SECONDS = 600
 COMPRESS_THRESHOLD_SECONDS = 120
@@ -138,12 +140,25 @@ def ensure_jpg(src_path, shortcode, idx=None):
     return out_path if convert_to_jpg(src_path, out_path) else src_path
 
 
-def get_sidecar_images(full_path, shortcode):
+def get_sidecar_media(full_path, shortcode):
     def sidecar_index(filename):
         match = re.search(r'_(\d+)\.\w+$', filename)
         return int(match.group(1)) if match else 0
-    files = sorted((f for f in os.listdir(full_path) if f.endswith(IMG_EXTENSIONS)), key=sidecar_index)
-    return [ensure_jpg(os.path.join(full_path, f), shortcode, sidecar_index(f)) for f in files]
+
+    files = sorted(
+        (f for f in os.listdir(full_path) if f.endswith(IMG_EXTENSIONS + VIDEO_EXTENSIONS)),
+        key=sidecar_index
+    )
+
+    media = []
+    for f in files:
+        idx = sidecar_index(f)
+        src_path = os.path.join(full_path, f)
+        if f.endswith(VIDEO_EXTENSIONS):
+            media.append((src_path, 'video'))
+        else:
+            media.append((ensure_jpg(src_path, shortcode, idx), 'photo'))
+    return media
 
 
 def probe_link(url):
@@ -367,7 +382,7 @@ def load_post(shortcode):
         print(lang['func']['load_post']['success'], shortcode)
 
         if post.typename == 'GraphSidecar':
-            return 'carousel', get_sidecar_images(full_path, shortcode)
+            return 'carousel', get_sidecar_media(full_path, shortcode)
 
         if post.typename == 'GraphVideo':
             video_path = None
@@ -530,15 +545,19 @@ def build_slideshow(images, audio_path, out_path):
     return os.path.abspath(out_path), width, height
 
 
-async def _send_staging_photo(path, idx, context, max_retries=3):
+async def _send_staging_media(path, kind, idx, context, max_retries=3):
+    send_func = context.bot.send_video if kind == 'video' else context.bot.send_photo
+    field_name = 'video' if kind == 'video' else 'photo'
+
     for attempt in range(max_retries):
         try:
             with open(path, 'rb') as f:
-                temp_msg = await context.bot.send_photo(
-                    chat_id=STAGING_CHAT_ID, photo=f,
-                    read_timeout=60, write_timeout=60, connect_timeout=15,
-                )
-            return temp_msg.photo[-1].file_id, temp_msg.message_id
+                temp_msg = await send_func(**{
+                    'chat_id': STAGING_CHAT_ID, field_name: f,
+                    'read_timeout': 60, 'write_timeout': 60, 'connect_timeout': 15,
+                })
+            file_obj = temp_msg.video if kind == 'video' else temp_msg.photo[-1]
+            return file_obj.file_id, temp_msg.message_id
         except RetryAfter as e:
             wait = e.retry_after + 0.5
             print(f'Flood control on image {idx}, waiting')
@@ -553,14 +572,14 @@ async def _send_staging_photo(path, idx, context, max_retries=3):
     return None, None
 
 
-async def upload_and_get_file_ids(images, context):
+async def upload_and_get_file_ids(media_items, context):
     results = []
     staging_message_ids = []
 
-    for idx, path in enumerate(images, start=1):
-        file_id, message_id = await _send_staging_photo(path, idx, context)
+    for idx, (path, kind) in enumerate(media_items, start=1):
+        file_id, message_id = await _send_staging_media(path, kind, idx, context)
         if file_id is not None:
-            results.append((idx, file_id))
+            results.append((idx, file_id, kind))
             staging_message_ids.append(message_id)
         await asyncio.sleep(0.15)
 
@@ -596,14 +615,17 @@ async def finalize_carousel_selection(prompt_message_id, chosen_paths, context, 
                 await context.bot.delete_message(chat_id=chat_id, message_id=reply_message_id)
             except Exception as e:
                 print(err_lang(lang['func']['load_carousel']['reply']['fail'], e=e))
-        shutil.rmtree(os.path.dirname(session['paths'][0]), ignore_errors=True)
+        shutil.rmtree(os.path.dirname(session['paths'][0][0]), ignore_errors=True)
         return
 
     results = await upload_and_get_file_ids(chosen_paths, context)
-    file_ids = [fid for _, fid in results]
     sent_count = 0
-    for chunk in chunk_list(file_ids, TG_MAX_MEDIA_CHUNK):
-        media = [InputMediaPhoto(fid) for fid in chunk]
+
+    for chunk in chunk_list(results, TG_MAX_MEDIA_CHUNK):
+        media = [
+            InputMediaVideo(fid) if kind == 'video' else InputMediaPhoto(fid)
+            for idx, fid, kind in chunk
+        ]
         try:
             await context.bot.send_media_group(
                 chat_id=chat_id, media=media,
@@ -624,7 +646,7 @@ async def finalize_carousel_selection(prompt_message_id, chosen_paths, context, 
         except Exception as e:
             print(err_lang(lang['func']['load_carousel']['reply']['fail'], e=e))
 
-    shutil.rmtree(os.path.dirname(session['paths'][0]), ignore_errors=True)
+    shutil.rmtree(os.path.dirname(session['paths'][0][0]), ignore_errors=True)
 
 
 async def handle_carousel_timeout(context: ContextTypes.DEFAULT_TYPE):
@@ -635,30 +657,27 @@ async def handle_carousel_timeout(context: ContextTypes.DEFAULT_TYPE):
     await finalize_carousel_selection(prompt_message_id, session['paths'], context, delete_prompt=True)
 
 
-async def send_carousel_prompt(msg_obj, images, shortcode, context):
-    results = await upload_and_get_file_ids(images, context)
+async def send_carousel_prompt(msg_obj, media_items, shortcode, context):
+    results = await upload_and_get_file_ids(media_items, context)
     if not results:
         await msg_obj.reply_text(lang['func']['load_carousel']['prompt']['fail'])
         return
     preview_message_ids = []
     for chunk in chunk_list(results, TG_MAX_MEDIA_CHUNK):
-        media = [InputMediaPhoto(fid, caption=str(idx)) for idx, fid in chunk]
-        sent_messages = await context.bot.send_media_group(chat_id=msg_obj.chat.id, media=media, read_timeout=30,
-                                                           write_timeout=30)
+        media = [
+            InputMediaVideo(fid, caption=str(idx)) if kind == 'video'
+            else InputMediaPhoto(fid, caption=str(idx))
+            for idx, fid, kind in chunk
+        ]
+        sent_messages = await context.bot.send_media_group(chat_id=msg_obj.chat.id, media=media,
+                                                           read_timeout=30, write_timeout=30)
         preview_message_ids.extend(m.message_id for m in sent_messages)
     prompt = await msg_obj.reply_text(lang['func']['load_carousel']['prompt']['query'],
-                                      parse_mode='HTML',  # important for Italic
-                                      read_timeout=60,
-                                      write_timeout=60,
-                                      connect_timeout=15
-                                      )
-    job = context.job_queue.run_once(
-        handle_carousel_timeout,
-        when=CAROUSEL_TIMEOUT_SECONDS,
-        data=prompt.message_id,
-    )
+                                      parse_mode='HTML',
+                                      read_timeout=60, write_timeout=60, connect_timeout=15)
+    job = context.job_queue.run_once(handle_carousel_timeout, when=CAROUSEL_TIMEOUT_SECONDS, data=prompt.message_id)
     pending_carousels[prompt.message_id] = {
-        'paths': images,
+        'paths': media_items,
         'requester_id': msg_obj.from_user.id if msg_obj.from_user else None,
         'chat_id': msg_obj.chat.id,
         'preview_message_ids': preview_message_ids,
