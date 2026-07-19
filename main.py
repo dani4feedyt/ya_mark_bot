@@ -311,13 +311,20 @@ def load_video(url, shortcode):
 
     base_opts = {
         'external_downloader': 'aria2c',
-        'external_downloader_args': ['-x', '16', '-s', '16', '-k', '1M'],
-        'format': 'bestvideo+bestaudio/best',
+        'external_downloader_args': [
+            '-x', '16', '-s', '16', '-k', '1M',
+            '--timeout=15',
+            '--max-tries=3',
+            '--retry-wait=2',
+        ],
+        'format': 'best/bestvideo+bestaudio',
         'format_sort': ['filesize:50M'],
         'paths': {'home': dir_target},
         'outtmpl': '%(id)s.%(ext)s',
         'quiet': True,
         'recode_video': 'mp4',
+        'socket_timeout': 20,
+        'retries': 3,
     }
 
     info = probe_video(url, base_opts)
@@ -829,12 +836,15 @@ async def process_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         content_width, content_height = content_attributes[1], content_attributes[2]
         try:
             if content_type == 'video':
-                await msg_obj.reply_video(content_path, width=content_width,
-                                          height=content_height, read_timeout=60, write_timeout=60)
+                await msg_obj.reply_video(
+                    content_path, width=content_width, height=content_height,
+                    read_timeout=60, write_timeout=120, connect_timeout=15,
+                )
             elif content_type == 'post':
                 await msg_obj.reply_photo(content_path, read_timeout=30, write_timeout=30)
         except Exception as e:
             print(err_lang(lang['func']['msg_process']['error']['timeout'], e=e))
+            print(f'[actual error] {type(e).__name__}: {e}')
         finally:
             shutil.rmtree(os.path.dirname(content_path), ignore_errors=True)
             await safe_delete(msg)
