@@ -844,7 +844,6 @@ async def process_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await msg_obj.reply_photo(content_path, read_timeout=30, write_timeout=30)
         except Exception as e:
             print(err_lang(lang['func']['msg_process']['error']['timeout'], e=e))
-            print(f'[actual error] {type(e).__name__}: {e}')
         finally:
             shutil.rmtree(os.path.dirname(content_path), ignore_errors=True)
             await safe_delete(msg)
