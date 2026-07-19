@@ -36,9 +36,9 @@ VIDEO_EXTENSIONS = ('.mp4',)
 MAX_DURATION_SECONDS = 600
 COMPRESS_THRESHOLD_SECONDS = 120
 CAROUSEL_TIMEOUT_SECONDS = 60
-MAX_FILESIZE_BYTES = 300 * 1024 * 1024
-MAX_VIDEO_MB = 50
-TARGET_SIZE_MB = 47
+MAX_FILESIZE_BYTES = 2000 * 1024 * 1024
+MAX_VIDEO_MB = 1950
+TARGET_SIZE_MB = 1900
 
 SLIDESHOW_SECONDS_PER_IMAGE = 5
 SLIDESHOW_TARGET_DURATION = 20
@@ -850,7 +850,14 @@ async def log_error(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # Start the bot
 if __name__ == '__main__':
-    app = Application.builder().token(API_TOKEN).build()
+    app = (
+        Application.builder()
+        .token(API_TOKEN)
+        .base_url('http://telegram-bot-api:8081/bot')
+        .base_file_url('http://telegram-bot-api:8081/file/bot')
+        .local_mode(True)
+        .build()
+    )
 
     app.add_handler(CommandHandler('start', initiate_command))
     app.add_handler(CommandHandler('help', assist_command))

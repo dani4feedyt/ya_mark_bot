@@ -5,6 +5,20 @@
     restart: always
     env_file:
       - .env
+    depends_on:
+      - telegram-bot-api
     volumes:
       - ./downloads:/app/downloads
       - ./lang.yaml:/app/lang.yaml
+
+  telegram-bot-api:
+    ports: ["8081:8081"]
+    image: aiogram/telegram-bot-api:latest
+    container_name: ya_mark_bot_api
+    restart: always
+    env_file:
+      - .env
+    environment:
+      TELEGRAM_LOCAL: "true"
+    volumes:
+      - ./telegram-bot-api-data:/var/lib/telegram-bot-api
