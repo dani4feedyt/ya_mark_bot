@@ -361,10 +361,12 @@ def load_video(url, shortcode):
     heavy_compress = bool(duration and duration > COMPRESS_THRESHOLD_SECONDS)
 
     playback_flags = [
+        '-profile:v', 'high',
+        '-level', '4.1',
         '-g', '30',
         '-keyint_min', '30',
         '-sc_threshold', '0',
-        '-vsync', 'cfr',
+        '-fps_mode', 'cfr',
         '-r', '30',
         '-movflags', '+faststart',
     ]
@@ -376,11 +378,13 @@ def load_video(url, shortcode):
             '-crf', '30',
             '-vf', 'scale=-2:720',
             '-maxrate', '2500k',
-            '-bufsize', '5000k',
+            '-bufsize', '2500k',
             '-pix_fmt', 'yuv420p',
             *playback_flags,
             '-c:a', 'aac',
             '-b:a', '96k',
+            '-ar', '44100',
+            '-ac', '2',
         ]
     else:
         ffmpeg_args = [
@@ -388,10 +392,13 @@ def load_video(url, shortcode):
             '-preset', 'fast',
             '-crf', '23',
             '-maxrate', '4000k',
-            '-bufsize', '8000k',
+            '-bufsize', '4000k',
             '-pix_fmt', 'yuv420p',
             *playback_flags,
             '-c:a', 'aac',
+            '-b:a', '128k',
+            '-ar', '44100',
+            '-ac', '2',
         ]
 
     ydl_opts = {**base_opts, 'postprocessor_args': {'ffmpeg': ffmpeg_args}}
