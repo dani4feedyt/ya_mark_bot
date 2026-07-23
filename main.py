@@ -16,7 +16,6 @@ import urllib.request
 import yt_dlp
 import glob
 from telegram import Update, Message, InputMediaPhoto, InputMediaVideo
-from telegram.constants import ParseMode
 from telegram.error import TimedOut, RetryAfter
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
@@ -44,6 +43,7 @@ SLIDESHOW_SECONDS_PER_IMAGE = 5
 SLIDESHOW_TARGET_DURATION = 20
 TG_MAX_MEDIA_CHUNK = 10
 
+os.chmod('downloads', 0o755)
 for folder in os.listdir(os.path.abspath('downloads')):
     f_path = os.path.abspath(os.path.join('downloads', folder))
     if not f_path.endswith('.txt'):
