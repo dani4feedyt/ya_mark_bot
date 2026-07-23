@@ -375,6 +375,8 @@ def load_video(url, shortcode):
             '-preset', 'veryfast',
             '-crf', '30',
             '-vf', 'scale=-2:720',
+            '-maxrate', '2500k',
+            '-bufsize', '5000k',
             '-pix_fmt', 'yuv420p',
             *playback_flags,
             '-c:a', 'aac',
@@ -383,8 +385,10 @@ def load_video(url, shortcode):
     else:
         ffmpeg_args = [
             '-c:v', 'libx264',
-            '-preset', 'ultrafast',
+            '-preset', 'fast',
             '-crf', '23',
+            '-maxrate', '4000k',
+            '-bufsize', '8000k',
             '-pix_fmt', 'yuv420p',
             *playback_flags,
             '-c:a', 'aac',
