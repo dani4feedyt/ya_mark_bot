@@ -73,6 +73,17 @@ async def safe_delete(msg):
     except Exception as e:
         print(f'delete failed: {e}')
 
+def relax_permissions(dir_path):
+    try:
+        for root, dirs, files in os.walk(dir_path):
+            for d in dirs:
+                os.chmod(os.path.join(root, d), 0o755)
+            for f in files:
+                os.chmod(os.path.join(root, f), 0o644)
+        os.chmod(dir_path, 0o755)
+    except Exception as e:
+        print(f'Failed to relax permissions on {dir_path}: {e}')
+
 
 def err_lang(template, **kwargs):
     try:
@@ -764,29 +775,37 @@ def preprocess_link(user_input: str):
     clean_link = link.split('?')[0].rstrip('/')
     shortcode = clean_link.split('/')[-1]
     out_path = os.path.join('downloads', shortcode, f"{shortcode}.mp4")
+    dir_target = os.path.join('downloads', shortcode)
     print("shortcode:" + shortcode)
 
     link_kind = probe_link(link)
 
     if link_kind == 'video':
         media_args = load_video(link, shortcode)
+        if media_args and media_args[0]:
+            relax_permissions(dir_target)
         return 'video', media_args
 
     elif link_kind == 'photo':
         if '/p/' in link:
             kind, data = load_post(shortcode)
             if kind == 'carousel':
+                relax_permissions(dir_target)
                 return 'carousel', (data, shortcode)
             elif kind == 'video':
+                relax_permissions(dir_target)
                 return 'video', data
             elif kind == 'single':
                 image_path, audio_path = data
                 if audio_path:
                     media_args = combine_img_audio(image_path, audio_path, out_path)
-                    return 'video', media_args
+                    result_type = 'video'
                 else:
                     media_args = image_path, None, None
-                    return 'post', media_args
+                    result_type = 'post'
+                if media_args and media_args[0]:
+                    relax_permissions(dir_target)
+                return result_type, media_args
             return None, media_args
         else:
             images, audio_path = load_tiktok_post(link, shortcode)
@@ -794,6 +813,8 @@ def preprocess_link(user_input: str):
                 print("Download failed.")
                 return None, media_args
             media_args = build_slideshow(images, audio_path, out_path)
+            if media_args and media_args[0]:
+                relax_permissions(dir_target)
             return 'video', media_args
 
     return None, media_args
