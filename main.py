@@ -317,48 +317,8 @@ def ensure_fits(video_path, duration_s, max_mb=MAX_VIDEO_MB, attempts=2):
     return video_path, fits
 
 
-def load_video(url, shortcode):
-    dir_target = os.path.join('downloads', shortcode)
-
-    base_opts = {
-        'external_downloader': 'aria2c',
-        'external_downloader_args': [
-            '-x', '16', '-s', '16', '-k', '1M',
-            '--timeout=15',
-            '--max-tries=3',
-            '--retry-wait=2',
-        ],
-        'format': 'best/bestvideo+bestaudio',
-        'format_sort': ['filesize:50M'],
-        'paths': {'home': dir_target},
-        'outtmpl': '%(id)s.%(ext)s',
-        'quiet': True,
-        'recode_video': 'mp4',
-        'socket_timeout': 20,
-        'retries': 3,
-    }
-
-    info = probe_video(url, base_opts)
-    if info is None:
-        print('WARNING: METADATA PROBE UNSUCCESSFUL, SKIPPING')
-        return None, None, None
-
-    if info.get('is_live') is True or info.get('is_live') is None:
-        print('WARNING: IS OR WAS LIVE, SKIPPING')
-        return None, None, None
-
-    duration = info.get('duration')
-    filesize = info.get('filesize_approx')
-
-    if duration and duration > MAX_DURATION_SECONDS:
-        print('WARNING: TOO LONG, SKIPPING')
-        return None, None, None
-
-    if filesize and filesize > MAX_FILESIZE_BYTES:
-        print('WARNING: TOO LARGE, SKIPPING')
-        return None, None, None
-
-    heavy_compress = bool(duration and duration > COMPRESS_THRESHOLD_SECONDS)
+def normalize_video(video_path, duration_s):
+    heavy_compress = bool(duration_s and duration_s > COMPRESS_THRESHOLD_SECONDS)
 
     playback_flags = [
         '-profile:v', 'high',
@@ -401,7 +361,59 @@ def load_video(url, shortcode):
             '-ac', '2',
         ]
 
-    ydl_opts = {**base_opts, 'postprocessor_args': {'ffmpeg': ffmpeg_args}}
+    tmp_path = video_path + '.norm.mp4'
+    cmd = ['ffmpeg', '-y', '-i', video_path, *ffmpeg_args, tmp_path]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        print(f'normalize_video failed: {result.stderr[-500:]}')
+        return video_path, False
+
+    os.replace(tmp_path, video_path)
+    return video_path, True
+
+
+def load_video(url, shortcode):
+    dir_target = os.path.join('downloads', shortcode)
+
+    base_opts = {
+        'external_downloader': 'aria2c',
+        'external_downloader_args': [
+            '-x', '16', '-s', '16', '-k', '1M',
+            '--timeout=15',
+            '--max-tries=3',
+            '--retry-wait=2',
+        ],
+        'format': 'best/bestvideo+bestaudio',
+        'format_sort': ['filesize:50M'],
+        'paths': {'home': dir_target},
+        'outtmpl': '%(id)s.%(ext)s',
+        'quiet': True,
+        'recode_video': 'mp4',
+        'socket_timeout': 20,
+        'retries': 3,
+    }
+
+    info = probe_video(url, base_opts)
+    if info is None:
+        print('WARNING: METADATA PROBE UNSUCCESSFUL, SKIPPING')
+        return None, None, None
+
+    if info.get('is_live') is True or info.get('is_live') is None:
+        print('WARNING: IS OR WAS LIVE, SKIPPING')
+        return None, None, None
+
+    duration = info.get('duration')
+    filesize = info.get('filesize_approx')
+
+    if duration and duration > MAX_DURATION_SECONDS:
+        print('WARNING: TOO LONG, SKIPPING')
+        return None, None, None
+
+    if filesize and filesize > MAX_FILESIZE_BYTES:
+        print('WARNING: TOO LARGE, SKIPPING')
+        return None, None, None
+
+    ydl_opts = base_opts
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:
@@ -410,10 +422,16 @@ def load_video(url, shortcode):
             for item in os.listdir(dir_target):
                 if item.endswith('.mp4'):
                     video_path = os.path.join(dir_target, item)
+                    real_duration = get_duration(video_path) or duration or 60
+
+                    video_path, normalized = normalize_video(video_path, real_duration)
+                    if not normalized:
+                        print('normalization failed')
+                        return None, None, None
+
                     size_mb = os.path.getsize(video_path) / (1024 * 1024)
                     if size_mb > MAX_VIDEO_MB:
                         print('exceeds 50 mb, shrinking')
-                        real_duration = get_duration(video_path) or duration or 60
                         video_path, fits = ensure_fits(video_path, real_duration)
                         if not fits:
                             print('failed to fit')
