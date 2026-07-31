@@ -320,52 +320,27 @@ def ensure_fits(video_path, duration_s, max_mb=MAX_VIDEO_MB, attempts=2):
 def normalize_video(video_path, duration_s):
     heavy_compress = bool(duration_s and duration_s > COMPRESS_THRESHOLD_SECONDS)
 
-    playback_flags = [
-        '-profile:v', 'high',
-        '-level', '4.1',
-        '-g', '30',
-        '-keyint_min', '30',
-        '-sc_threshold', '0',
-        '-fps_mode', 'cfr',
-        '-r', '30',
-        '-movflags', '+faststart',
-    ]
-
-    if heavy_compress:
-        ffmpeg_args = [
-            '-c:v', 'libx264',
-            '-preset', 'veryfast',
-            '-crf', '30',
-            '-vf', 'scale=-2:720',
-            '-maxrate', '2500k',
-            '-bufsize', '2500k',
-            '-pix_fmt', 'yuv420p',
-            *playback_flags,
-            '-c:a', 'aac',
-            '-b:a', '96k',
-            '-ar', '44100',
-            '-ac', '2',
-        ]
-    else:
-        ffmpeg_args = [
-            '-c:v', 'libx264',
-            '-preset', 'fast',
-            '-crf', '26',
-            '-maxrate', '2M',
-            '-bufsize', '4M',
-            '-pix_fmt', 'yuv420p',
-            *playback_flags,
-            '-c:a', 'aac',
-            '-b:a', '128k',
-            '-ar', '44100',
-            '-ac', '2',
-        ]
-
     tmp_path = video_path + '.norm.mp4'
-    cmd = ['ffmpeg', '-y', '-i', video_path, *ffmpeg_args, tmp_path]
+    cmd = [
+        'ffmpeg', '-y',
+        '-vaapi_device', '/dev/dri/renderD128',
+        '-i', video_path,
+        '-vf', 'format=nv12,hwupload' + (',scale_vaapi=w=-2:h=720' if heavy_compress else ''),
+        '-c:v', 'h264_vaapi',
+        '-b:v', '2500k' if heavy_compress else '2M',
+        '-maxrate', '2500k' if heavy_compress else '2M',
+        '-g', '30',
+        '-bf', '0',
+        '-movflags', '+faststart',
+        '-c:a', 'aac',
+        '-b:a', '96k' if heavy_compress else '128k',
+        '-ar', '44100',
+        '-ac', '2',
+        tmp_path,
+    ]
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
-        print(f'normalize_video failed: {result.stderr[-500:]}')
+        print(f'normalize_video (vaapi) failed: {result.stderr[-500:]}')
         return video_path, False
 
     os.replace(tmp_path, video_path)
