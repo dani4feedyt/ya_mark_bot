@@ -319,13 +319,15 @@ def ensure_fits(video_path, duration_s, max_mb=MAX_VIDEO_MB, attempts=2):
 
 def normalize_video(video_path, duration_s):
     heavy_compress = bool(duration_s and duration_s > COMPRESS_THRESHOLD_SECONDS)
+    width, height = get_video_dimensions(video_path)
+    needs_scale = heavy_compress and width and height and max(width, height) > 1280
 
     tmp_path = video_path + '.norm.mp4'
     cmd = [
         'ffmpeg', '-y',
         '-vaapi_device', '/dev/dri/renderD128',
         '-i', video_path,
-        '-vf', 'format=nv12,hwupload' + (',scale_vaapi=w=-2:h=720' if heavy_compress else ''),
+        '-vf', 'format=nv12,hwupload' + (',scale_vaapi=w=-2:h=720' if needs_scale else ''),
         '-c:v', 'h264_vaapi',
         '-b:v', '2500k' if heavy_compress else '2M',
         '-maxrate', '2500k' if heavy_compress else '2M',
