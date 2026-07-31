@@ -7,6 +7,8 @@
       - .env
     depends_on:
       - telegram-bot-api
+    devices:
+      - /dev/dri:/dev/dri
     volumes:
       - ./downloads:/app/downloads
       - ./lang.yaml:/app/lang.yaml
