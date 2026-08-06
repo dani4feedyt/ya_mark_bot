@@ -664,7 +664,7 @@ async def finalize_carousel_selection(prompt_message_id, chosen_paths, context, 
             try:
                 await context.bot.send_media_group(
                     chat_id=chat_id, media=media,
-                    read_timeout=60, write_timeout=60, connect_timeout=15,
+                    read_timeout=60, write_timeout=60, connect_timeout=15, disable_notification=True
                 )
                 sent_count += len(chunk)
             except Exception as e:
@@ -710,11 +710,11 @@ async def send_carousel_prompt(msg_obj, media_items, shortcode, context):
             for idx, fid, kind in chunk
         ]
         sent_messages = await context.bot.send_media_group(chat_id=msg_obj.chat.id, media=media,
-                                                           read_timeout=30, write_timeout=30)
+                                                           read_timeout=30, write_timeout=30, disable_notification=True)
         preview_message_ids.extend(m.message_id for m in sent_messages)
     prompt = await msg_obj.reply_text(lang['func']['load_carousel']['prompt']['query'],
                                       parse_mode='HTML',
-                                      read_timeout=60, write_timeout=60, connect_timeout=15)
+                                      read_timeout=60, write_timeout=60, connect_timeout=15, disable_notification=True)
     job = context.job_queue.run_once(handle_carousel_timeout, when=CAROUSEL_TIMEOUT_SECONDS, data=prompt.message_id)
     pending_carousels[prompt.message_id] = {
         'paths': media_items,
@@ -874,10 +874,10 @@ async def process_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if content_type == 'video':
                 await msg_obj.reply_video(
                     content_path, width=content_width, height=content_height,
-                    read_timeout=60, write_timeout=120, connect_timeout=15,
+                    read_timeout=60, write_timeout=120, connect_timeout=15, disable_notification=True
                 )
             elif content_type == 'post':
-                await msg_obj.reply_photo(content_path, read_timeout=30, write_timeout=30)
+                await msg_obj.reply_photo(content_path, read_timeout=30, write_timeout=30, disable_notification=True)
         except Exception as e:
             print(err_lang(lang['func']['msg_process']['error']['timeout'], e=e))
         finally:
