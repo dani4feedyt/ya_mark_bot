@@ -63,16 +63,6 @@ async def personalize_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     await update.message.reply_text(lang['func']['personalize'])
 
 
-async def safe_delete(msg):
-    if msg is None:
-        return
-    try:
-        await msg.delete()
-    except TimedOut:
-        await msg.delete(read_timeout=5)
-    except Exception as e:
-        print(f'delete failed: {e}')
-
 def relax_permissions(dir_path):
     try:
         for root, dirs, files in os.walk(dir_path):
@@ -620,6 +610,13 @@ async def _send_staging_media(path, kind, idx, context, max_retries=3):
 
     return None, None
 
+async def _keep_typing(chat_id, context, action='upload_video', interval=4):
+    try:
+        while True:
+            await context.bot.send_chat_action(chat_id=chat_id, action=action)
+            await asyncio.sleep(interval)
+    except asyncio.CancelledError:
+        pass
 
 async def upload_and_get_file_ids(media_items, context):
     results = []
@@ -838,21 +835,23 @@ async def process_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text: str = msg_obj.text
     content_type = ''
     content_attributes = (None, None, None)
-    msg: Message | None = None
 
     if chat_type in ('supergroup', 'group', 'channel'):
         if text and ('.instagram.' in text or '.tiktok.' in text):
-            msg = await msg_obj.reply_text(lang['func']['msg_process']['wait'])
+            action_hint = 'upload_video'
+            if '/photo/' in text or '/p/' in text:
+                action_hint = 'upload_photo'
+            typing_task = asyncio.create_task(_keep_typing(msg_obj.chat.id, context, action=action_hint))
             try:
                 loop = asyncio.get_running_loop()
                 content_type, content_attributes = await loop.run_in_executor(
-                    None,
-                    preprocess_link,
-                    text
+                    None, preprocess_link, text
                 )
             except Exception as e:
                 print(f'preprocess_link crashed: {e}')
                 content_type, content_attributes = None, (None, None, None)
+            finally:
+                typing_task.cancel()
         elif text and any(word in text.lower() for word in lang['func']['msg_process']['alias']):
             response: str = generate_convo_response(text)
             await msg_obj.reply_text(response)
@@ -866,7 +865,6 @@ async def process_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if content_type == 'carousel':
         images, shortcode = content_attributes
         await send_carousel_prompt(msg_obj, images, shortcode, context)
-        await safe_delete(msg)
         return
 
     content_path = content_attributes[0] if content_attributes else None
@@ -884,10 +882,8 @@ async def process_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             print(err_lang(lang['func']['msg_process']['error']['timeout'], e=e))
         finally:
             shutil.rmtree(os.path.dirname(content_path), ignore_errors=True)
-            await safe_delete(msg)
     else:
         await msg_obj.reply_text(lang['func']['msg_process']['error']['no_content'])
-        await safe_delete(msg)
 
 
 async def log_error(update: Update, context: ContextTypes.DEFAULT_TYPE):
