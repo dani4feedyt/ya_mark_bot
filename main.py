@@ -333,9 +333,9 @@ def normalize_video(video_path, duration_s):
         tmp_path,
     ]
     result = subprocess.run(cmd, capture_output=True, text=True)
-    print(result.stderr[:2500])
-    print('---TAIL---')
-    print(result.stderr[-500:])
+    # print(result.stderr[:2500])
+    # print('---TAIL---')
+    # print(result.stderr[-500:])
     if result.returncode != 0:
         print(f'normalize_video (vaapi) failed: {result.stderr[-500:]}')
         return video_path, False
@@ -355,7 +355,7 @@ def load_video(url, shortcode):
             '--max-tries=3',
             '--retry-wait=2',
         ],
-        'format': 'bestvideo+bestaudio/best',
+        'format': 'best/bestvideo+bestaudio',
         'format_sort': ['filesize:50M'],
         'paths': {'home': dir_target},
         'outtmpl': '%(id)s.%(ext)s',
