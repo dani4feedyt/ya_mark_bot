@@ -355,7 +355,7 @@ def load_video(url, shortcode):
             '--max-tries=3',
             '--retry-wait=2',
         ],
-        'format': 'best/bestvideo+bestaudio',
+        'format': 'bestvideo+bestaudio/best',
         'format_sort': ['filesize:50M'],
         'paths': {'home': dir_target},
         'outtmpl': '%(id)s.%(ext)s',
