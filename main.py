@@ -317,6 +317,8 @@ def normalize_video(video_path, duration_s):
         'ffmpeg', '-y',
         '-vaapi_device', '/dev/dri/renderD128',
         '-i', video_path,
+        '-map', '0:v:0',
+        '-map', '0:a:0?',
         '-vf', 'format=nv12,hwupload' + (',scale_vaapi=w=-2:h=720' if needs_scale else ''),
         '-c:v', 'h264_vaapi',
         '-b:v', '2500k' if heavy_compress else '2M',
@@ -880,8 +882,8 @@ async def process_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await msg_obj.reply_photo(content_path, read_timeout=30, write_timeout=30, disable_notification=True)
         except Exception as e:
             print(err_lang(lang['func']['msg_process']['error']['timeout'], e=e))
-        #finally:
-            #shutil.rmtree(os.path.dirname(content_path), ignore_errors=True)
+        finally:
+            shutil.rmtree(os.path.dirname(content_path), ignore_errors=True)
     else:
         await msg_obj.reply_text(lang['func']['msg_process']['error']['no_content'])
 
