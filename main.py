@@ -78,7 +78,7 @@ def relax_permissions(dir_path):
 
 def get_reason_text(reason, include_raw=False):
     reasons = lang.get('func', {}).get('msg_process', {}).get('error', {}).get('reasons', {})
-    default = lang['func']['msg_process']['error']['no_content']
+    default = lang.get('func', {}).get('msg_process', {}).get('error', {}).get('no_content', {})
     if reason is None:
         return default
 
@@ -92,7 +92,7 @@ def get_reason_text(reason, include_raw=False):
     if include_raw and raw:
         text += f"\n\n<code>{html.escape(str(raw))}</code>"
 
-    return default + text
+    return default + "\n" + text
 
 
 def err_lang(template, **kwargs):
