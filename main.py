@@ -1,4 +1,5 @@
 import asyncio
+import html
 import traceback
 from typing import Final
 import os
@@ -73,6 +74,25 @@ def relax_permissions(dir_path):
         os.chmod(dir_path, 0o755)
     except Exception as e:
         print(f'Failed to relax permissions on {dir_path}: {e}')
+
+
+def get_reason_text(reason, include_raw=False):
+    reasons = lang.get('func', {}).get('msg_process', {}).get('error', {}).get('reasons', {})
+    default = lang['func']['msg_process']['error']['no_content']
+    if reason is None:
+        return default
+
+    key, kwargs = reason
+    kwargs = dict(kwargs)
+    raw = kwargs.pop('_raw', None)
+
+    template = reasons.get(key, default)
+    text = err_lang(template, **kwargs) if kwargs else template
+
+    if include_raw and raw:
+        text += f"\n\n<code>{html.escape(str(raw))}</code>"
+
+    return default + text
 
 
 def err_lang(template, **kwargs):
@@ -367,23 +387,19 @@ def load_video(url, shortcode):
 
     info = probe_video(url, base_opts)
     if info is None:
-        print('WARNING: METADATA PROBE UNSUCCESSFUL, SKIPPING')
-        return None, None, None
+        return None, None, None, ('probe_failed', {})
 
     if info.get('is_live') is True or info.get('is_live') is None:
-        print('WARNING: IS OR WAS LIVE, SKIPPING')
-        return None, None, None
+        return None, None, None, ('live', {})
 
     duration = info.get('duration')
     filesize = info.get('filesize_approx')
 
     if duration and duration > MAX_DURATION_SECONDS:
-        print('WARNING: TOO LONG, SKIPPING')
-        return None, None, None
+        return None, None, None, ('too_long', {'max_minutes': MAX_DURATION_SECONDS // 60})
 
     if filesize and filesize > MAX_FILESIZE_BYTES:
-        print('WARNING: TOO LARGE, SKIPPING')
-        return None, None, None
+        return None, None, None, ('too_large', {})
 
     ydl_opts = base_opts
 
@@ -398,22 +414,22 @@ def load_video(url, shortcode):
 
                     video_path, normalized = normalize_video(video_path, real_duration)
                     if not normalized:
-                        print('normalization failed')
-                        return None, None, None
+                        return None, None, None, ('processing_failed', {})
 
                     size_mb = os.path.getsize(video_path) / (1024 * 1024)
                     if size_mb > MAX_VIDEO_MB:
-                        print('exceeds 50 mb, shrinking')
+                        print('exceeds cap size, shrinking')
                         video_path, fits = ensure_fits(video_path, real_duration)
                         if not fits:
-                            print('failed to fit')
-                            return None, None, None
+                            return None, None, None, ('too_large_after_shrink', {})
                     width, height = get_video_dimensions(video_path)
-                    return video_path, width, height
+                    return video_path, width, height, None
+
         except Exception as e:
             print(err_lang(lang['func']['load_video']['fail'], e=e))
+            return None, None, None, ('download_error', {'e': str(e), '_raw': str(e)})
 
-    return None, None, None
+    return None, None, None, ('processing_failed', {})
 
 
 def load_post(shortcode):
@@ -435,17 +451,15 @@ def load_post(shortcode):
                     video_path = os.path.join(full_path, item)
                     break
             if video_path is None:
-                print('no .mp4 found after download')
-                return None, None
+                return 'video', (None, None, None, ('processing_failed', {}))
 
             duration = get_duration(video_path) or 0
             video_path, fits = ensure_fits(video_path, duration)
             if not fits:
-                print('failed to fit')
-                return None, None
+                return 'video', (None, None, None, ('too_large_after_shrink', {}))
 
             width, height = get_video_dimensions(video_path)
-            return 'video', (video_path, width, height)
+            return 'video', (video_path, width, height, None)
 
         img_path = None
         for item in os.listdir(full_path):
@@ -472,8 +486,7 @@ def load_post(shortcode):
 
     except Exception as e:
         print(err_lang(lang['func']['load_post']['fail'], e=e))
-
-    return None, None
+        return None, (None, None, None, ('download_error', {'e': str(e), '_raw': str(e)}))
 
 
 def combine_img_audio(img_path, audio_path, out_path):
@@ -771,14 +784,13 @@ def generate_convo_response(user_input: str) -> str:
 def preprocess_link(user_input: str):
     message_parts = user_input.split(' ')
     link = ''
-    media_args = []
     for item in message_parts:
         if item.startswith('http'):
             link = item
             break
 
     if not link:
-        return None, media_args
+        return None, (None, None, None, ('unsupported_link', {}))
 
     clean_link = link.split('?')[0].rstrip('/')
     shortcode = clean_link.split('/')[-1]
@@ -806,26 +818,30 @@ def preprocess_link(user_input: str):
             elif kind == 'single':
                 image_path, audio_path = data
                 if audio_path:
-                    media_args = combine_img_audio(image_path, audio_path, out_path)
+                    path, width, height = combine_img_audio(image_path, audio_path, out_path)
                     result_type = 'video'
                 else:
-                    media_args = image_path, None, None
+                    path, width, height = image_path, None, None
                     result_type = 'post'
-                if media_args and media_args[0]:
+                reason = None if path else ('processing_failed', {})
+                media_args = (path, width, height, reason)
+                if path:
                     relax_permissions(dir_target)
                 return result_type, media_args
-            return None, media_args
+            return 'video', data
         else:
             images, audio_path = load_tiktok_post(link, shortcode)
             if images is None:
                 print("Download failed.")
-                return None, media_args
-            media_args = build_slideshow(images, audio_path, out_path)
-            if media_args and media_args[0]:
+                return 'video', (None, None, None, ('download_error', {'e': 'gallery-dl failed'}))
+            path, width, height = build_slideshow(images, audio_path, out_path)
+            reason = None if path else ('processing_failed', {})
+            media_args = (path, width, height, reason)
+            if path:
                 relax_permissions(dir_target)
             return 'video', media_args
 
-    return None, media_args
+    return None, (None, None, None, ('unsupported_link', {}))
 
 
 async def process_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -839,7 +855,7 @@ async def process_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_type: str = msg_obj.chat.type
     text: str = msg_obj.text
     content_type = ''
-    content_attributes = (None, None, None)
+    content_attributes = (None, None, None, None)
 
     if chat_type in ('supergroup', 'group', 'channel'):
         if text and ('.instagram.' in text or '.tiktok.' in text):
@@ -854,7 +870,7 @@ async def process_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
             except Exception as e:
                 print(f'preprocess_link crashed: {e}')
-                content_type, content_attributes = None, (None, None, None)
+                content_type, content_attributes = None, (None, None, None, ('processing_failed', {}))
             finally:
                 typing_task.cancel()
         elif text and any(word in text.lower() for word in lang['func']['msg_process']['alias']):
@@ -873,6 +889,7 @@ async def process_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     content_path = content_attributes[0] if content_attributes else None
+    fail_reason = content_attributes[3] if content_attributes and len(content_attributes) > 3 else None
     if content_type and content_path:
         content_width, content_height = content_attributes[1], content_attributes[2]
         try:
@@ -888,7 +905,10 @@ async def process_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         finally:
             shutil.rmtree(os.path.dirname(content_path), ignore_errors=True)
     else:
-        await msg_obj.reply_text(lang['func']['msg_process']['error']['no_content'])
+        await msg_obj.reply_text(
+            get_reason_text(fail_reason, include_raw=True),
+            parse_mode='HTML',
+        )
 
 
 async def log_error(update: Update, context: ContextTypes.DEFAULT_TYPE):

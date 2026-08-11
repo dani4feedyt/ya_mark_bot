@@ -89,4 +89,13 @@ func:
         I work only in groups for now
       timeout: >
         Error, message reply timed out: {e}
+      reasons:
+        probe_failed: "Couldn't read this post. It might be private, deleted, or restricted."
+        live: "This is a livestream. Those aren't supported."
+        too_long: "This video is longer than {max_minutes} minutes. That is over the limit."
+        too_large: "This video is too large to download."
+        too_large_after_shrink: "This video is too large even after compression."
+        processing_failed: "Something went wrong while processing this video."
+        download_error: "Couldn't download this: {e}"
+        unsupported_link: "I couldn't recognize this as a supported Instagram or TikTok link."
 
