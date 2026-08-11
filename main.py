@@ -89,11 +89,11 @@ def get_reason_text(reason, include_raw=False):
     template = reasons.get(key, default)
     text = err_lang(template, **kwargs) if kwargs else template
 
-    full_text = default + "\n" + text
+    full_text = default + "\n" + f"<tg-spoiler>{text}</tg-spoiler>"
     if include_raw and raw:
         full_text += f"\n\n<code>{html.escape(str(raw))}</code>"
 
-    return f"<tg-spoiler>{full_text}</tg-spoiler>"
+    return full_text
 
 
 def err_lang(template, **kwargs):
