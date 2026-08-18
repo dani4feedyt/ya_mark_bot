@@ -630,6 +630,7 @@ async def _send_staging_media(path, kind, idx, context, max_retries=3):
 
     return None, None
 
+
 async def _keep_typing(chat_id, context, action='upload_video', interval=4):
     try:
         while True:
@@ -637,6 +638,7 @@ async def _keep_typing(chat_id, context, action='upload_video', interval=4):
             await asyncio.sleep(interval)
     except asyncio.CancelledError:
         pass
+
 
 async def upload_and_get_file_ids(media_items, context):
     results = []
@@ -859,7 +861,7 @@ async def process_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     content_type = ''
     content_attributes = (None, None, None, None)
 
-    if text and ('.instagram.' in text or '.tiktok.' in text):
+    if text and ('.instagram.' in text or '.tiktok.' in text or '.youtube.' in text):
         action_hint = 'upload_video'
         if '/photo/' in text or '/p/' in text:
             action_hint = 'upload_photo'
