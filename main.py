@@ -922,6 +922,7 @@ if __name__ == '__main__':
         .base_url('http://telegram-bot-api:8081/bot')
         .base_file_url('http://telegram-bot-api:8081/file/bot')
         .local_mode(True)
+        .concurrent_updates(3)
         .build()
     )
 
