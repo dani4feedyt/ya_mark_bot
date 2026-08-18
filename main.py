@@ -858,30 +858,26 @@ async def process_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     content_type = ''
     content_attributes = (None, None, None, None)
 
-    if chat_type in ('supergroup', 'group', 'channel'):
-        if text and ('.instagram.' in text or '.tiktok.' in text):
-            action_hint = 'upload_video'
-            if '/photo/' in text or '/p/' in text:
-                action_hint = 'upload_photo'
-            typing_task = asyncio.create_task(_keep_typing(msg_obj.chat.id, context, action=action_hint))
-            try:
-                loop = asyncio.get_running_loop()
-                content_type, content_attributes = await loop.run_in_executor(
-                    None, preprocess_link, text
-                )
-            except Exception as e:
-                print(f'preprocess_link crashed: {e}')
-                content_type, content_attributes = None, (None, None, None, ('processing_failed', {}))
-            finally:
-                typing_task.cancel()
-        elif text and any(word in text.lower() for word in lang['func']['msg_process']['alias']):
-            response: str = generate_convo_response(text)
-            await msg_obj.reply_text(response)
-            return
-        else:
-            return
+    if text and ('.instagram.' in text or '.tiktok.' in text):
+        action_hint = 'upload_video'
+        if '/photo/' in text or '/p/' in text:
+            action_hint = 'upload_photo'
+        typing_task = asyncio.create_task(_keep_typing(msg_obj.chat.id, context, action=action_hint))
+        try:
+            loop = asyncio.get_running_loop()
+            content_type, content_attributes = await loop.run_in_executor(
+                None, preprocess_link, text
+            )
+        except Exception as e:
+            print(f'preprocess_link crashed: {e}')
+            content_type, content_attributes = None, (None, None, None, ('processing_failed', {}))
+        finally:
+            typing_task.cancel()
+    elif text and any(word in text.lower() for word in lang['func']['msg_process']['alias']):
+        response: str = generate_convo_response(text)
+        await msg_obj.reply_text(response)
+        return
     else:
-        await msg_obj.reply_text(lang['func']['msg_process']['error']['group'])
         return
 
     if content_type == 'carousel':
