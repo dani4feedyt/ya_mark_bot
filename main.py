@@ -202,7 +202,7 @@ def probe_link(url):
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
     if '/photo/' in url or '/p/' in url:
         return 'photo'
-    if '/video/' in url or '/reel/' in url:
+    if '/video/' in url or '/reel/' in url or '/shorts/' in url:
         return 'video'
     try:
         req = urllib.request.Request(url, headers=headers, method='HEAD')
@@ -210,7 +210,7 @@ def probe_link(url):
             final_url = response.geturl()
             if '/photo/' in final_url or '/p/' in final_url:
                 return 'photo'
-            elif '/video/' in final_url or '/reel/' in final_url:
+            elif '/video/' in final_url or '/reel/' in final_url or '/shorts/' in final_url:
                 return 'video'
             else:
                 return None
