@@ -14,12 +14,13 @@ RUN echo "deb http://deb.debian.org/debian trixie main non-free non-free-firmwar
     git \
     curl \
     aria2 \
+    unzip \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 RUN curl -fsSL https://deno.land/install.sh | sh -s -- -y \
-    && mv /root/.deno/bin/deno /usr/local/bin/deno \
+    && mv /root/.deno/bin/deno /usr/local/bin/deno
 
 COPY . .
 
