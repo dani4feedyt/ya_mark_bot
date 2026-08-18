@@ -6,6 +6,7 @@ ENV PYTHONUNBUFFERED=1
 
 RUN echo "deb http://deb.debian.org/debian trixie main non-free non-free-firmware" > /etc/apt/sources.list.d/non-free.list && \
     echo "deb http://deb.debian.org/debian-security trixie-security main non-free non-free-firmware" >> /etc/apt/sources.list.d/non-free.list && \
+    curl -fsSL https://deno.land/install.sh | sh -s -- -y \ && mv /root/.deno/bin/deno /usr/local/bin/deno && \
     apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     intel-media-va-driver-non-free \
