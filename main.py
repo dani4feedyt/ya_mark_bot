@@ -32,7 +32,7 @@ BOT_HANDLE: Final = os.getenv('BOT_HANDLE')
 STAGING_CHAT_ID: Final = os.getenv('STAGING_CHAT_ID')
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 IMG_EXTENSIONS = ('.jpg', '.jpeg', '.webp', '.png')
-VIDEO_EXTENSIONS = ('.mp4',)
+VIDEO_EXTENSIONS = ('.mp4', '.mkv', '.webm', '.mov')
 
 MAX_DURATION_SECONDS = 600
 COMPRESS_THRESHOLD_SECONDS = 120
@@ -331,39 +331,51 @@ def ensure_fits(video_path, duration_s, max_mb=MAX_VIDEO_MB, attempts=2):
 
 def normalize_video(video_path, duration_s):
     heavy_compress = bool(duration_s and duration_s > COMPRESS_THRESHOLD_SECONDS)
-    width, height = get_video_dimensions(video_path)
-    needs_scale = heavy_compress and width and height and max(width, height) > 1280
 
-    tmp_path = video_path + '.norm.mp4'
-    cmd = [
-        'ffmpeg', '-y',
-        '-vaapi_device', '/dev/dri/renderD128',
-        '-i', video_path,
-        '-map', '0:v:0',
-        '-map', '0:a:0?',
-        '-vf', 'format=nv12,hwupload' + (',scale_vaapi=w=-2:h=720' if needs_scale else ''),
-        '-c:v', 'h264_vaapi',
-        '-b:v', '2500k' if heavy_compress else '2M',
-        '-maxrate', '2500k' if heavy_compress else '2M',
+    playback_flags = [
+        '-profile:v', 'high',
+        '-level', '4.1',
         '-g', '30',
-        '-bf', '0',
+        '-keyint_min', '30',
+        '-sc_threshold', '0',
+        '-fps_mode', 'cfr',
+        '-r', '30',
         '-movflags', '+faststart',
-        '-c:a', 'aac',
-        '-b:a', '96k' if heavy_compress else '128k',
-        '-ar', '44100',
-        '-ac', '2',
-        tmp_path,
     ]
+
+    if heavy_compress:
+        ffmpeg_args = [
+            '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '30',
+            '-vf', 'scale=-2:720', '-maxrate', '2500k', '-bufsize', '2500k',
+            '-pix_fmt', 'yuv420p', *playback_flags,
+            '-c:a', 'aac', '-b:a', '96k', '-ar', '44100', '-ac', '2',
+        ]
+    else:
+        ffmpeg_args = [
+            '-c:v', 'libx264', '-preset', 'fast', '-crf', '26',
+            '-maxrate', '2M', '-bufsize', '4M',
+            '-pix_fmt', 'yuv420p', *playback_flags,
+            '-c:a', 'aac', '-b:a', '128k', '-ar', '44100', '-ac', '2',
+        ]
+
+    base, _ext = os.path.splitext(video_path)
+    tmp_path = base + '.norm.mp4'
+    final_path = base + '.mp4'
+
+    cmd = ['ffmpeg', '-y', '-i', video_path, *ffmpeg_args, tmp_path]
     result = subprocess.run(cmd, capture_output=True, text=True)
-    # print(result.stderr[:2500])
-    # print('---TAIL---')
-    # print(result.stderr[-500:])
     if result.returncode != 0:
-        print(f'normalize_video (vaapi) failed: {result.stderr[-500:]}')
+        print(f'normalize_video failed: {result.stderr[-500:]}')
         return video_path, False
 
-    os.replace(tmp_path, video_path)
-    return video_path, True
+    if video_path != final_path:
+        try:
+            os.remove(video_path)
+        except OSError as e:
+            print(f'failed to remove source {video_path}: {e}')
+
+    os.replace(tmp_path, final_path)
+    return final_path, True
 
 
 def load_video(url, shortcode):
@@ -410,7 +422,7 @@ def load_video(url, shortcode):
             ydl.download([url])
             print(lang['func']['load_video']['success'])
             for item in os.listdir(dir_target):
-                if item.endswith('.mp4'):
+                if item.endswith(VIDEO_EXTENSIONS):
                     video_path = os.path.join(dir_target, item)
                     real_duration = get_duration(video_path) or duration or 60
 
